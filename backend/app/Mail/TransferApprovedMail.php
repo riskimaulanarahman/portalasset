@@ -35,21 +35,10 @@ class TransferApprovedMail extends Mailable
         );
     }
 
-    /**
-     * Get the message content definition.
-     */
     public function content(): Content
     {
         return new Content(
-            htmlString: '
-            <div style="font-family: sans-serif; color: #333;">
-                <p>Yth. Bapak/Ibu,</p>
-                <p>Terlampir adalah dokumen Berita Acara untuk Transfer dengan kode <b>' . $this->transfer->transfer_code . '</b> yang telah disetujui sepenuhnya.</p>
-                <br/>
-                <p>Terima kasih,</p>
-                <p>Sistem Portal Asset</p>
-            </div>
-            ',
+            view: 'emails.transfer_approved',
         );
     }
 

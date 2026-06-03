@@ -12,6 +12,7 @@ use App\Models\Material;
 use App\Models\Transfer;
 use App\Models\TransferItem;
 use App\Services\MaterialTransferService;
+use App\Mail\TransferCreatedMail;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +111,7 @@ class TransferController extends Controller
                     ->first();
             }
 
+            $firstStepEmails = [];
             if ($workflow) {
                 ApprovalRequest::create([
                     'reference_table' => 'transfers',
@@ -119,6 +121,11 @@ class TransferController extends Controller
                     'status' => 'Pending',
                     'requester_id' => Auth::id(),
                 ]);
+
+                $firstStep = $workflow->steps->where('sequence', 1)->first();
+                if ($firstStep) {
+                    $firstStepEmails = $firstStep->getEmailRecipients($transfer->to_estate_id);
+                }
             } else {
                 // If no active workflow, immediately approve
                 $transfer->update([
@@ -129,6 +136,12 @@ class TransferController extends Controller
             }
 
             DB::commit();
+
+            if (!empty($firstStepEmails)) {
+                $transfer->load(['fromEstate', 'toEstate', 'items']);
+                $this->sendEmailIfEnabled($firstStepEmails, new TransferCreatedMail($transfer));
+            }
+
             return response()->json(['message' => 'Transfer created successfully', 'data' => $transfer], 201);
         } catch (ValidationException $e) {
             DB::rollBack();

@@ -24,4 +24,24 @@ class ApprovalStep extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    public function getEmailRecipients(?int $estateId = null): array
+    {
+        if ($this->user_id) {
+            $user = User::where('id', $this->user_id)
+                ->where('not_active', false)
+                ->first();
+            return ($user && $user->email) ? [$user->email] : [];
+        }
+
+        if ($this->role_name) {
+            $query = User::role($this->role_name)->where('not_active', false);
+            if ($estateId) {
+                $query->where('estate_id', $estateId);
+            }
+            return $query->pluck('email')->filter()->values()->toArray();
+        }
+
+        return [];
+    }
 }

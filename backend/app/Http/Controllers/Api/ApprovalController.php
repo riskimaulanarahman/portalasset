@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\ApprovalRequest;
+use App\Mail\ApprovalPendingMail;
+use App\Mail\TransferRejectedMail;
 use App\Models\ApprovalLog;
+use App\Models\ApprovalRequest;
 use App\Services\MaterialTransferService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -105,20 +107,46 @@ class ApprovalController extends Controller
                 'comment' => $request->comment ?? null,
             ]);
 
+            $pendingEmail   = null; // [emails, transfer, sequence]
+            $rejectedEmail  = null; // [emails, transfer, rejectedBy, comment]
+            $approvedJobArgs = null; // [transferId, toEmails, ccEmail]
+
             if ($action === 'Rejected') {
                 $approvalReq->update(['status' => 'Rejected']);
                 if ($approvalReq->reference) {
                     $approvalReq->reference->update(['status' => 'Rejected']);
                 }
+
+                if ($approvalReq->reference_table === 'transfers' && $approvalReq->requester_id) {
+                    $requester = \App\Models\User::find($approvalReq->requester_id);
+                    if ($requester && $requester->email) {
+                        $transfer = $approvalReq->reference->load(['fromEstate', 'toEstate', 'items']);
+                        $rejectedEmail = [
+                            'emails'     => [$requester->email],
+                            'transfer'   => $transfer,
+                            'rejectedBy' => Auth::user()->name ?? 'System',
+                            'comment'    => $request->comment ?? null,
+                        ];
+                    }
+                }
             } else { // Approved
-                // Find next step in workflow
                 $nextStep = $approvalReq->workflow->steps->where('sequence', '>', $currentSequence)->sortBy('sequence')->first();
 
                 if ($nextStep) {
-                    // Still more sequences to go
                     $approvalReq->update(['current_sequence' => $nextStep->sequence]);
+
+                    if ($approvalReq->reference_table === 'transfers') {
+                        $transfer = $approvalReq->reference->load(['fromEstate', 'toEstate', 'items']);
+                        $emails = $nextStep->getEmailRecipients($transfer->to_estate_id);
+                        if (!empty($emails)) {
+                            $pendingEmail = [
+                                'emails'   => $emails,
+                                'transfer' => $transfer,
+                                'sequence' => $nextStep->sequence,
+                            ];
+                        }
+                    }
                 } else {
-                    // Workflow finished
                     $approvalReq->update(['status' => 'Approved']);
                     if ($approvalReq->reference) {
                         $updatePayload = ['status' => 'Approved'];
@@ -131,12 +159,12 @@ class ApprovalController extends Controller
                             $updatePayload['receive_date'] = now();
                         }
 
-                        $approvalReq->reference->update($updatePayload); // or 'In Transit', etc.
-                        
+                        $approvalReq->reference->update($updatePayload);
+
                         if ($approvalReq->reference_table === 'transfers') {
                             $approvalUserIds = \App\Models\ApprovalLog::where('approval_request_id', $approvalReq->id)->pluck('user_id')->filter()->unique()->toArray();
                             $toEmails = \App\Models\User::whereIn('id', $approvalUserIds)->pluck('email')->filter()->toArray();
-                            
+
                             $requesterEmail = null;
                             if ($approvalReq->requester_id) {
                                 $requester = \App\Models\User::find($approvalReq->requester_id);
@@ -144,9 +172,9 @@ class ApprovalController extends Controller
                                     $requesterEmail = $requester->email;
                                 }
                             }
-                            
-                            if (count($toEmails) > 0) {
-                                \App\Jobs\SendTransferBeritaAcaraJob::dispatch($approvalReq->reference_id, $toEmails, $requesterEmail);
+
+                            if (!empty($toEmails)) {
+                                $approvedJobArgs = [$approvalReq->reference_id, $toEmails, $requesterEmail];
                             }
                         }
                     }
@@ -154,6 +182,25 @@ class ApprovalController extends Controller
             }
 
             DB::commit();
+
+            if ($rejectedEmail) {
+                $this->sendEmailIfEnabled(
+                    $rejectedEmail['emails'],
+                    new TransferRejectedMail($rejectedEmail['transfer'], $rejectedEmail['rejectedBy'], $rejectedEmail['comment'])
+                );
+            }
+
+            if ($pendingEmail) {
+                $this->sendEmailIfEnabled(
+                    $pendingEmail['emails'],
+                    new ApprovalPendingMail($pendingEmail['transfer'], $pendingEmail['sequence'])
+                );
+            }
+
+            if ($approvedJobArgs) {
+                \App\Jobs\SendTransferBeritaAcaraJob::dispatch(...$approvedJobArgs);
+            }
+
             return response()->json(['message' => "Successfully $action the request"]);
         } catch (ValidationException $e) {
             DB::rollBack();
