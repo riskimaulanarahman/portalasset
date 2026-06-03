@@ -1,0 +1,671 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Play, Plus, Trash2, Download, AlertCircle, History, XCircle } from 'lucide-react';
+import api from '../api/axios';
+import DataTable, { Column } from '../components/DataTable';
+import Modal from '../components/Modal';
+import Button from '../components/ui/Button';
+import { useToast } from '../components/ui/Toast';
+import useTitle from '../hooks/useTitle';
+import { Input, Textarea, FormGroup, SearchableSelect } from '../components/ui/FormFields';
+import { formatDate, getStoredUser, isHeadOfficeUser } from '../lib/utils';
+import { cn } from '../lib/utils';
+import { showConfirm } from '../utils/SwalUtils';
+
+interface TransferItem {
+  item_id: string;
+  qty: number;
+}
+
+interface Transfer extends Record<string, unknown> {
+  id: number;
+  transfer_code: string;
+  type: 'Asset' | 'Material';
+  from_estate_id: string;
+  to_estate_id: string;
+  anggota_id: string;
+  anggota_penerima?: {
+    sap_id: string;
+    nama: string;
+  };
+  status: string;
+  transfer_date: string;
+  notes: string;
+  items: TransferItem[];
+  materialHistories?: MaterialTransferHistory[];
+}
+
+interface MaterialTransferHistory {
+  id: number;
+  source_material_code: string;
+  destination_material_code: string;
+  qty: string | number;
+  destination_created: boolean;
+  source_stock_before: string | number;
+  source_stock_after: string | number;
+  destination_stock_before: string | number;
+  destination_stock_after: string | number;
+  processed_by?: string;
+  processed_at?: string;
+  fromEstate?: {
+    estate?: string;
+    estate_id?: string;
+  };
+  toEstate?: {
+    estate?: string;
+    estate_id?: string;
+  };
+}
+
+interface EstateOption {
+  id: number;
+  estate: string;
+  estate_id: string;
+}
+
+interface AnggotaOption {
+  sap_id: string;
+  nama: string;
+}
+
+interface AssetOption {
+  reg_id: string;
+  asset_no?: string;
+  type?: string;
+  manufacture?: string;
+  series?: string;
+  not_active?: boolean;
+}
+
+interface MaterialOption {
+  code: string;
+  nama: string;
+  stock?: number;
+  not_active?: boolean;
+}
+
+const TransfersPage: React.FC = () => {
+  useTitle('Transfers');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [transferType, setTransferType] = useState<'Asset' | 'Material'>('Material');
+  const [items, setItems] = useState<TransferItem[]>([{ item_id: '', qty: 1 }]);
+  const [isWarningOpen, setIsWarningOpen] = useState(false);
+  const [isCheckingWorkflow, setIsCheckingWorkflow] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<any>(null);
+  const [selectedHistoryTransfer, setSelectedHistoryTransfer] = useState<Transfer | null>(null);
+
+  // Auth user state
+  const user = getStoredUser();
+  const userEstateId = user?.estate_id ? String(user.estate_id) : '';
+  const isHoUser = isHeadOfficeUser(); // #22 FIX: use centralized helper
+  const [sourceEstateId, setSourceEstateId] = useState<string>(isHoUser ? '' : userEstateId);
+  const [toEstateId, setToEstateId]         = useState<string>('');
+
+  const queryClient = useQueryClient();
+  const { success, error: toastError } = useToast();
+
+  const { data, isLoading } = useQuery<{ data: Transfer[] }>({
+    queryKey: ['transfers'],
+    queryFn: async () => {
+      const response = await api.get('/transfers');
+      return response.data;
+    },
+  });
+
+  const { data: estatesData } = useQuery<EstateOption[]>({
+    queryKey: ['estates'],
+    queryFn: async () => {
+      const response = await api.get('/estates');
+      return response.data.data;
+    },
+  });
+
+  const { data: destinationEstatesData } = useQuery<{ data: EstateOption[] }>({
+    queryKey: ['estates', 'transfer-destination'],
+    queryFn: async () => {
+      const response = await api.get('/estates', {
+        params: { context: 'transfer-destination' },
+      });
+      return response.data;
+    },
+  });
+  
+  const { data: anggotasData } = useQuery<{ data: AnggotaOption[] }>({
+    queryKey: ['anggotas', toEstateId],
+    enabled: !!toEstateId,
+    queryFn: async () => {
+      const response = await api.get('/anggotas', {
+        params: { estate_id: toEstateId },
+      });
+      return response.data;
+    },
+  });
+
+  const { data: assetOptionsData, isLoading: isLoadingAssets } = useQuery<{ data: AssetOption[] }>({
+    queryKey: ['transfer-asset-options', sourceEstateId],
+    enabled: transferType === 'Asset' && !!sourceEstateId,
+    queryFn: async () => {
+      const response = await api.get('/assets', {
+        params: { all: 1, estate_id: sourceEstateId },
+      });
+      return response.data;
+    },
+  });
+
+  const { data: materialOptionsData, isLoading: isLoadingMaterials } = useQuery<{ data: MaterialOption[] }>({
+    queryKey: ['transfer-material-options', sourceEstateId],
+    enabled: transferType === 'Material' && !!sourceEstateId,
+    queryFn: async () => {
+      const response = await api.get('/materials', { params: { all: 1, estate_id: sourceEstateId } });
+      return response.data;
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (payload: any) => api.post('/transfers', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      setIsModalOpen(false);
+      setItems([{ item_id: '', qty: 1 }]);
+      setToEstateId('');
+      if (isHoUser) setSourceEstateId('');
+      success('Transfer created', 'The transfer has been submitted for approval.');
+    },
+    onError: (err: any) => {
+      toastError('Submission failed', err.response?.data?.message || 'Could not process the transfer.');
+    },
+  });
+
+  // #18 FIX: Cancel transfer mutation
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => api.post(`/transfers/${id}/cancel`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      success('Transfer dibatalkan', 'Status transfer telah diubah menjadi Cancelled.');
+    },
+    onError: (err: any) => {
+      toastError('Gagal membatalkan', err.response?.data?.message || 'Terjadi kesalahan.');
+    },
+  });
+
+  const handleCancelTransfer = async (transfer: Transfer) => {
+    const result = await showConfirm(
+      `Batalkan transfer "${transfer.transfer_code}"?`,
+      'Transfer yang sudah dibatalkan tidak dapat diproses kembali.'
+    );
+    if (result.isConfirmed) {
+      cancelMutation.mutate(transfer.id);
+    }
+  };
+
+  const addItemRow = () => setItems([...items, { item_id: '', qty: 1 }]);
+  const removeItemRow = (index: number) => {
+    if (items.length > 1) {
+      setItems(items.filter((_, i) => i !== index));
+    }
+  };
+  const updateItemRow = (index: number, field: keyof TransferItem, value: string | number) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setItems(newItems);
+  };
+
+  useEffect(() => {
+    setItems([{ item_id: '', qty: 1 }]);
+  }, [transferType]);
+
+  const itemOptions = useMemo(() => {
+    if (transferType === 'Asset') {
+      return (assetOptionsData?.data ?? [])
+        .filter((asset) => !asset.not_active)
+        .map((asset) => ({
+          value: asset.reg_id,
+          label: [
+            asset.reg_id,
+            asset.type ? `- ${asset.type}` : '',
+            asset.manufacture ? asset.manufacture : '',
+            asset.series ? `(${asset.series})` : '',
+            asset.asset_no ? `| ${asset.asset_no}` : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        }));
+    }
+
+    return (materialOptionsData?.data ?? [])
+      .filter((material) => !material.not_active)
+      .map((material) => ({
+        value: material.code,
+        label: `${material.code} - ${material.nama}${typeof material.stock === 'number' ? ` (Stock: ${material.stock})` : ''}`,
+      }));
+  }, [assetOptionsData?.data, materialOptionsData?.data, transferType]);
+
+  const isItemOptionsLoading = transferType === 'Asset' ? isLoadingAssets : isLoadingMaterials;
+  const itemSearchPlaceholder = transferType === 'Asset' ? 'Search asset by reg ID, type, or serial...' : 'Search material by code or name...';
+
+  // #21 FIX: Helper untuk mendapatkan stok tersedia sebuah material
+  const getMaterialStock = (materialCode: string): number | null => {
+    if (transferType !== 'Material') return null;
+    const mat = (materialOptionsData?.data ?? []).find((m) => m.code === materialCode);
+    return typeof mat?.stock === 'number' ? mat.stock : null;
+  };
+
+  // Validasi qty vs stok sebelum submit
+  const validateItemQtys = (): string | null => {
+    if (transferType !== 'Material') return null;
+    for (const item of items) {
+      if (!item.item_id) continue;
+      const available = getMaterialStock(item.item_id);
+      if (available !== null && Number(item.qty) > available) {
+        return `Qty material "${item.item_id}" (${item.qty}) melebihi stok tersedia (${available}).`;
+      }
+    }
+    return null;
+  };
+
+  const handleDownloadBA = async (id: number) => {
+    try {
+      const response = await api.get(`/transfers/${id}/berita-acara`, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      // Optional: revoke the URL after a small delay to free memory, but the browser handles it mostly if tab stays open.
+    } catch (err: any) {
+      toastError('Error', 'Could not open the Berita Acara document.');
+    }
+  };
+
+  const columns: Column<Transfer>[] = [
+    { key: 'transfer_code', label: 'Transfer Code', sortable: true },
+    { key: 'type', label: 'Type' },
+    { key: 'from_estate_id', label: 'From' },
+    { key: 'to_estate_id', label: 'To' },
+    { key: 'anggota_penerima.nama', label: 'Recipient', render: (_, item) => item.anggota_penerima?.nama || '-' },
+    { key: 'transfer_date', label: 'Date', render: (val) => formatDate(String(val ?? '')) },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (val) => (
+        <span className={cn(
+          "px-2 py-0.5 rounded-full text-xs font-semibold",
+          val === 'Approved'  ? 'bg-green-100 text-green-800'  :
+          val === 'Rejected'  ? 'bg-red-100 text-red-800'      :
+          val === 'Cancelled' ? 'bg-gray-100 text-gray-500'    :
+          'bg-orange-100 text-orange-800'
+        )}>
+          {String(val)}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (_, item) => (
+        <div className="flex justify-end gap-2 pr-2">
+          {item.status === 'Approved' && item.type === 'Material' && (
+            <button
+              onClick={() => setSelectedHistoryTransfer(item)}
+              className="text-sky-700 hover:text-sky-800 bg-sky-50 p-1.5 rounded-lg border border-sky-100 transition-colors"
+              title="View Material Transfer History"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
+          {item.status === 'Approved' && (
+            <button
+              onClick={() => handleDownloadBA(item.id)}
+              className="text-primary hover:text-forest-700 bg-forest-50 p-1.5 rounded-lg border border-forest-100 transition-colors"
+              title="View Berita Acara (PDF)"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
+          {/* #18 FIX: Cancel button — hanya untuk Draft/Pending Approval */}
+          {['Draft', 'Pending Approval'].includes(String(item.status)) && (
+            <button
+              onClick={() => handleCancelTransfer(item)}
+              disabled={cancelMutation.isPending}
+              className="text-red-400 hover:text-red-600 bg-red-50 p-1.5 rounded-lg border border-red-100 transition-colors disabled:opacity-40"
+              title="Batalkan Transfer"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )
+    }
+  ];
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-forest-50 text-forest-600 rounded-xl ring-4 ring-forest-50">
+            <Play className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 tracking-tight leading-none">Transfers</h1>
+            <p className="text-sm text-gray-500 font-medium mt-1">Manage asset and material transfers between estates.</p>
+          </div>
+        </div>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="bg-primary hover:bg-forest-700 text-white px-5 py-2.5 rounded-xl flex items-center shadow-lg shadow-forest-200 transition-all font-bold text-sm tracking-wide transform active:scale-95"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          New Transfer
+        </button>
+      </div>
+
+      <DataTable<Transfer>
+        columns={columns}
+        data={data?.data ?? []}
+        isLoading={isLoading}
+        searchKeys={['transfer_code', 'from_estate_id', 'to_estate_id']}
+        searchPlaceholder="Search by code or estate..."
+        rowKey={(item) => item.id}
+        pageSize={15}
+        emptyMessage="No transfers recorded yet"
+      />
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setToEstateId(''); if (isHoUser) setSourceEstateId(''); }}
+        title="Create Transfer Request"
+        description="Submit a new transfer request for approval"
+        size="lg"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            const payload = {
+              type: transferType,
+              from_estate_id: fd.get('from_estate_id') as string,
+              to_estate_id: fd.get('to_estate_id') as string,
+              anggota_id: fd.get('anggota_id') as string,
+              notes: fd.get('notes') as string,
+              items: items.filter(i => i.item_id.trim() !== '')
+            };
+
+            // #21 FIX: Validasi qty vs stok tersedia sebelum submit
+            const qtyError = validateItemQtys();
+            if (qtyError) {
+              toastError('Validasi Qty', qtyError);
+              return;
+            }
+
+            // Check workflow before submitting
+            const checkWorkflow = async () => {
+              setIsCheckingWorkflow(true);
+              try {
+                const res = await api.get('/approval-workflows/check', {
+                  params: { module_name: 'Transfer', estate_id: payload.to_estate_id }
+                });
+                if (res.data.exists) {
+                  mutation.mutate(payload);
+                } else {
+                  setPendingPayload(payload);
+                  setIsWarningOpen(true);
+                }
+              } catch (err) {
+                console.error("Workflow check failed", err);
+                mutation.mutate(payload); // Fallback to submit anyway if check fails
+              } finally {
+                setIsCheckingWorkflow(false);
+              }
+            };
+
+            checkWorkflow();
+          }}
+          className="space-y-4"
+        >
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="type" value="Material" checked={transferType === 'Material'} onChange={() => setTransferType('Material')} />
+              Material
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="type" value="Asset" checked={transferType === 'Asset'} onChange={() => setTransferType('Asset')} />
+              Asset
+            </label>
+          </div>
+
+          <FormGroup cols={2}>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-forest-900">Source Estate <span className="text-red-500">*</span></label>
+              <select 
+                name="from_estate_id" 
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm disabled:opacity-60 disabled:cursor-not-allowed" 
+                required 
+                value={sourceEstateId}
+                onChange={(e) => {
+                  setSourceEstateId(e.target.value);
+                  setItems((current) => current.map((row) => ({ ...row, item_id: '' })));
+                }}
+                disabled={!isHoUser && !!userEstateId}
+              >
+                <option value="">Select Estate...</option>
+                {(estatesData ?? []).map((e) => (
+                  <option key={e.id} value={e.id}>{e.estate} ({e.estate_id})</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-forest-900">Destination Estate <span className="text-red-500">*</span></label>
+              <select
+                name="to_estate_id"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm"
+                required
+                value={toEstateId}
+                onChange={(e) => setToEstateId(e.target.value)}
+              >
+                <option value="">Select Estate...</option>
+                {(destinationEstatesData?.data ?? []).filter((e) => String(e.id) !== sourceEstateId).map((e) => (
+                  <option key={e.id} value={e.id}>{e.estate} ({e.estate_id})</option>
+                ))}
+              </select>
+            </div>
+          </FormGroup>
+
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-forest-900">Member / Recipient (Anggota)</label>
+            <select
+              key={toEstateId}
+              name="anggota_id"
+              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={!toEstateId}
+            >
+              <option value="">
+                {toEstateId ? 'Select Recipient (Optional)...' : 'Select destination estate first...'}
+              </option>
+              {anggotasData?.data?.map((a) => (
+                <option key={a.sap_id} value={a.sap_id}>{a.nama} ({a.sap_id})</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Transfer Items Table */}
+          <div className="border border-gray-200 rounded-xl overflow-hidden mt-2">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-forest-900 bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-2 font-bold">{transferType} Code / ID *</th>
+                  <th className="px-4 py-2 font-bold w-32">Qty *</th>
+                  <th className="px-4 py-2 font-bold w-12 text-center"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => (
+                  <tr key={idx} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2">
+                      <SearchableSelect
+                        options={itemOptions}
+                        value={item.item_id}
+                        onChange={(value) => updateItemRow(idx, 'item_id', String(value))}
+                        placeholder={
+                          !sourceEstateId
+                            ? 'Select source estate first...'
+                            : isItemOptionsLoading
+                              ? 'Loading options...'
+                              : itemSearchPlaceholder
+                        }
+                        disabled={!sourceEstateId || isItemOptionsLoading}
+                        noOptionsText={sourceEstateId ? `No ${transferType.toLowerCase()} available` : 'Select source estate first'}
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      {/* #21 FIX: Tampilkan stok tersedia dan highlight jika qty melebihi stok */}
+                      {(() => {
+                        const available = getMaterialStock(item.item_id);
+                        const exceedsStock = available !== null && Number(item.qty) > available;
+                        return (
+                          <div className="space-y-1">
+                            <Input
+                              type="number"
+                              name={`item_${idx}_qty`}
+                              value={item.qty}
+                              onChange={(e) => updateItemRow(idx, 'qty', Number(e.target.value))}
+                              min="1"
+                              required
+                              className={`py-1 ${exceedsStock ? 'border-red-400 ring-red-200' : ''}`}
+                            />
+                            {available !== null && item.item_id && (
+                              <p className={`text-[10px] font-semibold ${exceedsStock ? 'text-red-500' : 'text-forest-500'}`}>
+                                Stok: {available}{exceedsStock ? ' ⚠ melebihi stok' : ''}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {items.length > 1 && (
+                        <button type="button" onClick={() => removeItemRow(idx)} className="text-red-500 hover:text-red-700">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="p-2 border-t border-gray-100 bg-gray-50 flex justify-center">
+               <button type="button" onClick={addItemRow} className="text-xs font-semibold text-primary flex items-center gap-1 hover:underline">
+                  <Plus className="h-3 w-3" /> Add Item
+               </button>
+            </div>
+          </div>
+
+          <Textarea label="Notes" name="notes" rows={2} placeholder="Optional notes about this transfer" />
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <Button variant="ghost" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" type="submit" loading={mutation.isPending || isCheckingWorkflow}>Submit Transfer</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isWarningOpen}
+        onClose={() => setIsWarningOpen(false)}
+        title="Approval Workflow Warning"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-4 p-4 bg-orange-50 border border-orange-100 rounded-xl">
+            <AlertCircle className="h-6 w-6 text-orange-600 shrink-0" />
+            <div>
+              <h4 className="text-sm font-bold text-orange-900">Workflow Not Configured</h4>
+              <p className="text-xs text-orange-700 mt-1 leading-relaxed">
+                There is no active approval workflow found for the destination estate or global. 
+                If you proceed, this transfer request will be **automatically approved** without going through an approval sequence.
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 font-medium px-1">
+            Do you want to proceed with this transfer anyway?
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="ghost" onClick={() => setIsWarningOpen(false)}>Cancel</Button>
+            <Button 
+              variant="primary" 
+              className="bg-orange-600 hover:bg-orange-700 shadow-orange-100"
+              onClick={() => {
+                mutation.mutate(pendingPayload);
+                setIsWarningOpen(false);
+              }}
+            >
+              Confirm and Proceed
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!selectedHistoryTransfer}
+        onClose={() => setSelectedHistoryTransfer(null)}
+        title={`Transfer History${selectedHistoryTransfer ? `: ${selectedHistoryTransfer.transfer_code}` : ''}`}
+        description="Material stock movement created after final approval"
+        size="lg"
+      >
+        {selectedHistoryTransfer?.type !== 'Material' ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-600">
+            History mutasi stok hanya berlaku untuk transfer material.
+          </div>
+        ) : (selectedHistoryTransfer.materialHistories?.length ?? 0) === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-600">
+            Belum ada riwayat mutasi. Ini biasanya berarti transfer belum final approved atau data lama belum punya history.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {selectedHistoryTransfer?.materialHistories?.map((history) => (
+              <div key={history.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">
+                      {history.source_material_code} <span className="text-gray-400">→</span> {history.destination_material_code}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {history.fromEstate?.estate_id ?? '-'} to {history.toEstate?.estate_id ?? '-'} • Qty {String(history.qty)}
+                    </p>
+                  </div>
+                  <span className={cn(
+                    'rounded-full px-2.5 py-1 text-xs font-semibold',
+                    history.destination_created ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                  )}>
+                    {history.destination_created ? 'New code created' : 'Stock moved to existing code'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl bg-rose-50 px-3 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-rose-700">Source Stock</p>
+                    <p className="mt-1 text-sm text-rose-900">
+                      {String(history.source_stock_before)} → {String(history.source_stock_after)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 px-3 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Destination Stock</p>
+                    <p className="mt-1 text-sm text-emerald-900">
+                      {String(history.destination_stock_before)} → {String(history.destination_stock_after)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                  <span>Processed by {history.processed_by ?? 'system'}</span>
+                  <span>{history.processed_at ? formatDate(history.processed_at) : '-'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+export default TransfersPage;

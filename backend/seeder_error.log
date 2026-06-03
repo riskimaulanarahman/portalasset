@@ -1,0 +1,28 @@
+
+   INFO  Seeding database.  
+
+
+   Illuminate\Database\QueryException 
+
+  SQLSTATE[22001]: String data, right truncated: 1406 Data too long for column 'reg_id' at row 1 (Connection: mysql, SQL: insert into `assets` (`reg_id`, `asset_no`, `unit_id`, `date`, `serial_no`, `type_id`, `type`, `manufacture`, `series`, `section_id`, `alokasi`, `keterangan`, `vendor`, `create_by`, `source`, `update_date`, `create_date`) values (AST-TRN-001, ASSET/TRN/2024/001, TRN, 2026-03-31 15:48:09, SN-7CAF588A, 1, Laptop, Dell, Latitude 5420, 1, STAFF, Condition: New, Global IT Tech, admin, PO-20260331, 2026-03-31 15:48:09, 2026-03-31 15:48:09))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+20 vendor frames [22m
+
+  21  database/seeders/AssetSeeder.php:55
+      Illuminate\Database\Eloquent\Model::__callStatic("updateOrCreate")
+      [2m+23 vendor frames [22m
+
+  45  artisan:13
+      Illuminate\Foundation\Application::handleCommand(Object(Symfony\Component\Console\Input\ArgvInput))
+

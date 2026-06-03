@@ -1,0 +1,86 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\SectionController;
+use App\Http\Controllers\Api\EstateController;
+use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\MaterialController;
+use App\Http\Controllers\Api\AssetRegController;
+use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AnggotaController;
+use App\Http\Controllers\Api\AnggotaSyncController;
+use App\Http\Controllers\Api\CostCenterController;
+use App\Http\Controllers\Api\SoftwareController;
+use App\Http\Controllers\Api\ManufacturerController;
+use App\Http\Controllers\Api\AssetTypeController;
+use App\Http\Controllers\Api\UnitController;
+use App\Http\Controllers\Api\VendorController;
+
+// #3 FIX: Rate limiting — 5 percobaan per menit per IP
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+
+    // #2 FIX: Queue endpoint diproteksi — hanya admin yang bisa trigger
+    Route::get('/process-queue', function () {
+        abort_unless(auth()->user()->hasRole('admin'), 403, 'Unauthorized: hanya admin yang dapat memicu queue.');
+        \Illuminate\Support\Facades\Artisan::call('queue:work', ['--stop-when-empty' => true]);
+        return response()->json(['message' => 'Queue processed', 'output' => \Illuminate\Support\Facades\Artisan::output()]);
+    });
+
+    // Dashboard
+    Route::get('/dashboard', [\App\Http\Controllers\Api\DashboardController::class, 'getStats']);
+
+    // Master Data
+    Route::apiResource('sections', SectionController::class);
+    Route::apiResource('estates', EstateController::class);
+    Route::apiResource('business-units', \App\Http\Controllers\Api\BusinessUnitController::class);
+    Route::apiResource('categories', CategoryController::class);
+    Route::get('materials/generate-code', [MaterialController::class, 'generateCode']);
+    Route::apiResource('materials', MaterialController::class);
+    Route::apiResource('asset-regs', AssetRegController::class);
+    Route::post('anggotas/sync', [AnggotaSyncController::class, 'sync']);
+    Route::apiResource('anggotas', AnggotaController::class)->only(['index', 'show']);
+    Route::apiResource('cost-centers', CostCenterController::class);
+    Route::apiResource('software', SoftwareController::class);
+    Route::apiResource('manufacturers', ManufacturerController::class);
+    Route::apiResource('asset-types', AssetTypeController::class);
+    Route::apiResource('units', UnitController::class);
+    Route::apiResource('vendors', VendorController::class);
+
+    // Asset Management
+    Route::apiResource('assets', AssetController::class);
+
+    // Material Transactions
+    Route::apiResource('transactions', \App\Http\Controllers\Api\TransactionController::class);
+
+    // Administration
+    Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+    Route::apiResource('roles', \App\Http\Controllers\Api\RoleController::class);
+    Route::get('approval-workflows/check', [\App\Http\Controllers\Api\ApprovalWorkflowController::class, 'checkWorkflow']);
+    Route::apiResource('approval-workflows', \App\Http\Controllers\Api\ApprovalWorkflowController::class);
+    
+    // System Settings
+    Route::get('settings', [\App\Http\Controllers\Api\SettingController::class, 'index']);
+    Route::post('settings/bulk', [\App\Http\Controllers\Api\SettingController::class, 'updateBulk']);
+
+    // Transfers & Approvals
+    Route::apiResource('transfers', \App\Http\Controllers\Api\TransferController::class);
+    Route::get('transfers/{id}/berita-acara', [\App\Http\Controllers\Api\TransferController::class, 'downloadBeritaAcara']);
+    Route::post('transfers/{id}/cancel', [\App\Http\Controllers\Api\TransferController::class, 'cancel']); // #18 FIX
+    Route::get('approvals/my-approvals', [\App\Http\Controllers\Api\ApprovalController::class, 'myApprovals']);
+    Route::post('approvals/{id}/approve', [\App\Http\Controllers\Api\ApprovalController::class, 'approve']);
+    Route::post('approvals/{id}/reject', [\App\Http\Controllers\Api\ApprovalController::class, 'reject']);
+
+    // #16 FIX: Global search
+    Route::get('search', [\App\Http\Controllers\Api\SearchController::class, 'search']);
+
+    // #14 FIX: Password management
+    Route::post('profile/change-password', [\App\Http\Controllers\Api\AuthController::class, 'changePassword']);
+    Route::post('password/reset-by-admin', [\App\Http\Controllers\Api\AuthController::class, 'resetPasswordByAdmin']);
+});
