@@ -9,7 +9,7 @@ import api from '../api/axios';
 import StatsCard from '../components/ui/StatsCard';
 import Badge, { txTypeBadge, statusBadge } from '../components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
-import { formatDate, formatNumber, truncate } from '../lib/utils';
+import { formatDate, formatNumber, truncate, getStoredUser } from '../lib/utils';
 import useTitle from '../hooks/useTitle';
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
@@ -91,6 +91,10 @@ const DashboardPage: React.FC = () => {
   useTitle('Dashboard');
   const [tab, setTab] = useState('overview');
 
+  const currentUser = getStoredUser();
+  const estateName  = currentUser?.estate?.estate ?? '—';
+  const estateCode  = currentUser?.estate?.estate_id ?? '';
+
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
@@ -151,6 +155,15 @@ const DashboardPage: React.FC = () => {
       {/* ── Stats grid ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
+          title="My Estate"
+          value={estateName}
+          subtitle={estateCode}
+          icon={<MapPin className="h-4 w-4" />}
+          accent="green"
+          loading={false}
+          className="animate-fade-in"
+        />
+        <StatsCard
           title="Total Assets"
           value={isLoading ? '—' : formatNumber(stats?.total_assets ?? 0)}
           subtitle={`${stats?.active_assets ?? 0} active`}
@@ -182,15 +195,6 @@ const DashboardPage: React.FC = () => {
           trendLabel="vs last month"
           loading={isLoading}
           className="animate-fade-in delay-150"
-        />
-        <StatsCard
-          title="Sections"
-          value={isLoading ? '—' : formatNumber(stats?.total_sections ?? 0)}
-          subtitle={`${stats?.total_estates ?? 0} estates`}
-          icon={<MapPin className="h-4 w-4" />}
-          accent="green"
-          loading={isLoading}
-          className="animate-fade-in delay-200"
         />
       </div>
 

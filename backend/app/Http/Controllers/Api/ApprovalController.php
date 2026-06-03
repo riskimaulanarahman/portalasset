@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendWriteOffBeritaAcaraJob;
 use App\Mail\ApprovalPendingMail;
 use App\Mail\TransferRejectedMail;
+use App\Mail\WriteOffRejectedMail;
 use App\Models\ApprovalLog;
 use App\Models\ApprovalRequest;
 use App\Services\MaterialTransferService;
@@ -117,16 +119,28 @@ class ApprovalController extends Controller
                     $approvalReq->reference->update(['status' => 'Rejected']);
                 }
 
-                if ($approvalReq->reference_table === 'transfers' && $approvalReq->requester_id) {
+                if ($approvalReq->requester_id) {
                     $requester = \App\Models\User::find($approvalReq->requester_id);
                     if ($requester && $requester->email) {
-                        $transfer = $approvalReq->reference->load(['fromEstate', 'toEstate', 'items']);
-                        $rejectedEmail = [
-                            'emails'     => [$requester->email],
-                            'transfer'   => $transfer,
-                            'rejectedBy' => Auth::user()->name ?? 'System',
-                            'comment'    => $request->comment ?? null,
-                        ];
+                        if ($approvalReq->reference_table === 'transfers') {
+                            $transfer = $approvalReq->reference->load(['fromEstate', 'toEstate', 'items']);
+                            $rejectedEmail = [
+                                'type'       => 'transfer',
+                                'emails'     => [$requester->email],
+                                'transfer'   => $transfer,
+                                'rejectedBy' => Auth::user()->name ?? 'System',
+                                'comment'    => $request->comment ?? null,
+                            ];
+                        } elseif ($approvalReq->reference_table === 'trans_assets') {
+                            $writeOff = $approvalReq->reference->load(['asset.estate']);
+                            $rejectedEmail = [
+                                'type'       => 'write-off',
+                                'emails'     => [$requester->email],
+                                'writeOff'   => $writeOff,
+                                'rejectedBy' => Auth::user()->name ?? 'System',
+                                'comment'    => $request->comment ?? null,
+                            ];
+                        }
                     }
                 }
             } else { // Approved
@@ -145,6 +159,16 @@ class ApprovalController extends Controller
                                 'sequence' => $nextStep->sequence,
                             ];
                         }
+                    } elseif ($approvalReq->reference_table === 'trans_assets') {
+                        $writeOff = $approvalReq->reference->load(['asset.estate']);
+                        $emails = $nextStep->getEmailRecipients($writeOff->getApprovalEstateId());
+                        if (!empty($emails)) {
+                            $pendingEmail = [
+                                'emails'   => $emails,
+                                'transfer' => $writeOff,  // reuse ApprovalPendingMail via writeOff
+                                'sequence' => $nextStep->sequence,
+                            ];
+                        }
                     }
                 } else {
                     $approvalReq->update(['status' => 'Approved']);
@@ -157,6 +181,15 @@ class ApprovalController extends Controller
                                 Auth::user()->username ?? Auth::user()->name ?? 'system'
                             );
                             $updatePayload['receive_date'] = now();
+                        }
+
+                        if ($approvalReq->reference_table === 'trans_assets') {
+                            // Write-Off final approval: nonaktifkan aset
+                            $writeOff = $approvalReq->reference->load('asset');
+                            $writeOff->asset->update([
+                                'not_active' => true,
+                                'update_by'  => Auth::user()->username ?? Auth::user()->name ?? 'system',
+                            ]);
                         }
 
                         $approvalReq->reference->update($updatePayload);
@@ -176,6 +209,21 @@ class ApprovalController extends Controller
                             if (!empty($toEmails)) {
                                 $approvedJobArgs = [$approvalReq->reference_id, $toEmails, $requesterEmail];
                             }
+                        } elseif ($approvalReq->reference_table === 'trans_assets') {
+                            $approvalUserIds = \App\Models\ApprovalLog::where('approval_request_id', $approvalReq->id)->pluck('user_id')->filter()->unique()->toArray();
+                            $toEmails = \App\Models\User::whereIn('id', $approvalUserIds)->pluck('email')->filter()->toArray();
+
+                            $requesterEmail = null;
+                            if ($approvalReq->requester_id) {
+                                $requester = \App\Models\User::find($approvalReq->requester_id);
+                                if ($requester && $requester->email) {
+                                    $requesterEmail = $requester->email;
+                                }
+                            }
+
+                            if (!empty($toEmails)) {
+                                $approvedJobArgs = ['write-off:' . $approvalReq->reference_id, $toEmails, $requesterEmail];
+                            }
                         }
                     }
                 }
@@ -184,10 +232,17 @@ class ApprovalController extends Controller
             DB::commit();
 
             if ($rejectedEmail) {
-                $this->sendEmailIfEnabled(
-                    $rejectedEmail['emails'],
-                    new TransferRejectedMail($rejectedEmail['transfer'], $rejectedEmail['rejectedBy'], $rejectedEmail['comment'])
-                );
+                if ($rejectedEmail['type'] === 'transfer') {
+                    $this->sendEmailIfEnabled(
+                        $rejectedEmail['emails'],
+                        new TransferRejectedMail($rejectedEmail['transfer'], $rejectedEmail['rejectedBy'], $rejectedEmail['comment'])
+                    );
+                } elseif ($rejectedEmail['type'] === 'write-off') {
+                    $this->sendEmailIfEnabled(
+                        $rejectedEmail['emails'],
+                        new WriteOffRejectedMail($rejectedEmail['writeOff'], $rejectedEmail['rejectedBy'], $rejectedEmail['comment'])
+                    );
+                }
             }
 
             if ($pendingEmail) {
@@ -198,7 +253,13 @@ class ApprovalController extends Controller
             }
 
             if ($approvedJobArgs) {
-                \App\Jobs\SendTransferBeritaAcaraJob::dispatch(...$approvedJobArgs);
+                // Prefix 'write-off:' menandakan ini write-off job, bukan transfer
+                if (str_starts_with($approvedJobArgs[0], 'write-off:')) {
+                    $writeOffId = (int) str_replace('write-off:', '', $approvedJobArgs[0]);
+                    SendWriteOffBeritaAcaraJob::dispatch($writeOffId, $approvedJobArgs[1], $approvedJobArgs[2]);
+                } else {
+                    \App\Jobs\SendTransferBeritaAcaraJob::dispatch(...$approvedJobArgs);
+                }
             }
 
             return response()->json(['message' => "Successfully $action the request"]);

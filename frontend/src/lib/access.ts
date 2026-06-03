@@ -17,6 +17,7 @@ export const routePermissions: Record<string, string[]> = {
   '/asset-types': ['view-asset-types'],
   '/units': ['view-units'],
   '/vendors': ['view-vendors'],
+  '/asset-conditions': ['view-asset-conditions'],
   '/admin/workflows': ['view-approval-workflows'],
   '/admin/users': ['view-users'],
   '/admin/roles': ['view-roles'],

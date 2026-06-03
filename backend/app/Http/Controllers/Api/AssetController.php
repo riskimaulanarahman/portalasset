@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\InteractsWithEstateScope;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\Estate;
+use App\Models\TransferItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -28,7 +29,7 @@ class AssetController extends Controller implements HasMiddleware
 
     public function index(Request $request)
     {
-        $query = Asset::with(['section', 'assetReg', 'vendor', 'estate']);
+        $query = Asset::with(['section', 'assetReg', 'vendor', 'estate', 'latestCondition']);
         $estateId = $this->isHeadOfficeUser()
             ? ($request->filled('estate_id') ? (int) $request->estate_id : null)
             : $this->currentEstateId();
@@ -72,7 +73,7 @@ class AssetController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'reg_id' => 'required|max:10|unique:assets',
+            'reg_id' => 'required|max:20|unique:assets',
             'asset_no' => 'nullable|max:25',
             'unit_id' => 'nullable|max:25',
             'date' => 'nullable|date',
@@ -103,7 +104,19 @@ class AssetController extends Controller implements HasMiddleware
     {
         $this->ensureAssetAccess($asset);
 
-        return response()->json(['data' => $asset->load(['section', 'assetReg', 'transactions', 'maintenances', 'vendor', 'estate'])]);
+        $asset->load(['section', 'assetReg', 'maintenances', 'conditions', 'latestCondition', 'vendor', 'estate', 'writeOffRequests.approvalRequests.logs']);
+
+        // Riwayat transfer yang melibatkan aset ini
+        $transferHistory = TransferItem::where('item_id', $asset->reg_id)
+            ->where('item_type', 'Asset')
+            ->with(['transfer' => fn($q) => $q->with(['fromEstate', 'toEstate', 'approvalRequests.logs'])])
+            ->orderByDesc('id')
+            ->get();
+
+        $data = $asset->toArray();
+        $data['transfer_history'] = $transferHistory;
+
+        return response()->json(['data' => $data]);
     }
 
     public function update(Request $request, Asset $asset)

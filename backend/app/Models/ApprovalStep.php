@@ -35,7 +35,7 @@ class ApprovalStep extends Model
         }
 
         if ($this->role_name) {
-            $query = User::role($this->role_name)->where('not_active', false);
+            $query = User::whereHas('role', fn($q) => $q->where('name', $this->role_name))->where('not_active', false);
             if ($estateId) {
                 $query->where('estate_id', $estateId);
             }

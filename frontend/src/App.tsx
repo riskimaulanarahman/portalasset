@@ -20,6 +20,7 @@ import GuidePage from './pages/GuidePage';
 import UnitsPage from './pages/UnitsPage';
 import VendorsPage from './pages/VendorsPage';
 import BusinessUnitsPage from './pages/BusinessUnitsPage';
+import AssetConditionsPage from './pages/AssetConditionsPage';
 
 // Admin pages
 import AdminWorkflowsPage from './pages/admin/AdminWorkflowsPage';
@@ -48,6 +49,7 @@ function App() {
         <Route path="/transfers" element={<ProtectedRoute><TransfersPage /></ProtectedRoute>} />
         <Route path="/assets" element={<ProtectedRoute requiredPermissions={routePermissions['/assets']}><AssetsPage /></ProtectedRoute>} />
         <Route path="/assets/:regId" element={<ProtectedRoute requiredPermissions={routePermissions['/assets/:regId']}><AssetDetailPage /></ProtectedRoute>} />
+        <Route path="/asset-conditions" element={<ProtectedRoute requiredPermissions={routePermissions['/asset-conditions']}><AssetConditionsPage /></ProtectedRoute>} />
         <Route path="/anggotas" element={<ProtectedRoute requiredPermissions={routePermissions['/anggotas']}><AnggotaPage /></ProtectedRoute>} />
         <Route path="/cost-centers" element={<ProtectedRoute requiredPermissions={routePermissions['/cost-centers']}><CostCentersPage /></ProtectedRoute>} />
         <Route path="/software" element={<ProtectedRoute requiredPermissions={routePermissions['/software']}><SoftwarePage /></ProtectedRoute>} />

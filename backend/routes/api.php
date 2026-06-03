@@ -18,6 +18,9 @@ use App\Http\Controllers\Api\ManufacturerController;
 use App\Http\Controllers\Api\AssetTypeController;
 use App\Http\Controllers\Api\UnitController;
 use App\Http\Controllers\Api\VendorController;
+use App\Http\Controllers\Api\TransConditionController;
+use App\Http\Controllers\Api\TransMaintenanceController;
+use App\Http\Controllers\Api\WriteOffController;
 
 // #3 FIX: Rate limiting — 5 percobaan per menit per IP
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
@@ -55,6 +58,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Asset Management
     Route::apiResource('assets', AssetController::class);
+
+    // Asset Conditions & Maintenance
+    Route::apiResource('asset-conditions', TransConditionController::class)->except(['show']);
+    Route::apiResource('asset-maintenances', TransMaintenanceController::class);
+
+    // Write-Off
+    Route::get('write-offs', [WriteOffController::class, 'index']);
+    Route::post('write-offs', [WriteOffController::class, 'store']);
+    Route::get('write-offs/{id}', [WriteOffController::class, 'show']);
+    Route::post('write-offs/{id}/cancel', [WriteOffController::class, 'cancel']);
+    Route::get('write-offs/{id}/berita-acara', [WriteOffController::class, 'downloadBeritaAcara']);
 
     // Material Transactions
     Route::apiResource('transactions', \App\Http\Controllers\Api\TransactionController::class);

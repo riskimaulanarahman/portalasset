@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Play, Plus, Trash2, Download, AlertCircle, History, XCircle } from 'lucide-react';
+import { Play, Plus, Trash2, Download, AlertCircle, History, XCircle, Eye, ChevronDown } from 'lucide-react';
 import api from '../api/axios';
 import DataTable, { Column } from '../components/DataTable';
 import Modal from '../components/Modal';
@@ -15,6 +15,10 @@ import { showConfirm } from '../utils/SwalUtils';
 interface TransferItem {
   item_id: string;
   qty: number;
+  item_type?: string;
+  item_name?: string;
+  current_stock?: number | null;
+  projected_stock?: number | null;
 }
 
 interface Transfer extends Record<string, unknown> {
@@ -23,6 +27,8 @@ interface Transfer extends Record<string, unknown> {
   type: 'Asset' | 'Material';
   from_estate_id: string;
   to_estate_id: string;
+  from_estate?: { estate: string; estate_id: string };
+  to_estate?: { estate: string; estate_id: string };
   anggota_id: string;
   anggota_penerima?: {
     sap_id: string;
@@ -32,7 +38,37 @@ interface Transfer extends Record<string, unknown> {
   transfer_date: string;
   notes: string;
   items: TransferItem[];
-  materialHistories?: MaterialTransferHistory[];
+  material_histories?: MaterialTransferHistory[];
+  approval_requests?: ApprovalRequest[];
+}
+
+interface ApprovalLog {
+  id: number;
+  sequence: number;
+  action: 'Approved' | 'Rejected';
+  comment: string | null;
+  created_at: string;
+  user?: { name: string };
+}
+
+interface ApprovalStep {
+  sequence: number;
+  role_name: string | null;
+  user_id: number | null;
+  action_type: 'Reviewer' | 'Approver' | 'Acknowledgment';
+  assignee_names?: string[];
+  user?: { name: string };
+}
+
+interface ApprovalRequest {
+  id: number;
+  current_sequence: number;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+  workflow?: {
+    name: string;
+    steps: ApprovalStep[];
+  };
+  logs: ApprovalLog[];
 }
 
 interface MaterialTransferHistory {
@@ -47,11 +83,11 @@ interface MaterialTransferHistory {
   destination_stock_after: string | number;
   processed_by?: string;
   processed_at?: string;
-  fromEstate?: {
+  from_estate?: {
     estate?: string;
     estate_id?: string;
   };
-  toEstate?: {
+  to_estate?: {
     estate?: string;
     estate_id?: string;
   };
@@ -84,6 +120,85 @@ interface MaterialOption {
   not_active?: boolean;
 }
 
+const ACTION_TYPE_LABEL: Record<string, string> = {
+  Approver: 'Approver',
+  Reviewer: 'Reviewer',
+  Acknowledgment: 'Ack',
+};
+
+const ApprovalAccordion: React.FC<{ request: ApprovalRequest }> = ({ request }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  const steps = [...(request.workflow?.steps ?? [])].sort((a, b) => a.sequence - b.sequence);
+  const logs = request.logs ?? [];
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-semibold text-gray-800"
+      >
+        <span>Rantai Approval — {request.workflow?.name ?? 'Workflow'}</span>
+        <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', isOpen && 'rotate-180')} />
+      </button>
+      <div className={cn('grid transition-all duration-300', isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden">
+          <div className="divide-y divide-gray-100">
+            {steps.length === 0 && (
+              <p className="px-4 py-3 text-sm text-gray-400 italic">Tidak ada workflow step yang dikonfigurasi.</p>
+            )}
+            {steps.map((step) => {
+              const log = logs.find((l) => l.sequence === step.sequence);
+              const isCurrent = request.status === 'Pending' && step.sequence === request.current_sequence;
+              const isApproved = log?.action === 'Approved';
+              const isRejected = log?.action === 'Rejected';
+
+              let statusBadge: React.ReactNode;
+              if (isApproved) {
+                statusBadge = <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">Approved</span>;
+              } else if (isRejected) {
+                statusBadge = <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">Rejected</span>;
+              } else if (isCurrent) {
+                statusBadge = <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 animate-pulse">Menunggu</span>;
+              } else {
+                statusBadge = <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">Belum Giliran</span>;
+              }
+
+              const assigneeLabel = step.assignee_names?.length
+                ? step.assignee_names.join(', ')
+                : (step.user?.name ?? step.role_name ?? '—');
+              const approverName = log?.user?.name ?? assigneeLabel;
+
+              return (
+                <div key={step.sequence} className={cn('flex items-start gap-3 px-4 py-3', isCurrent && 'bg-orange-50/50')}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 mt-0.5">
+                    {step.sequence}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-gray-800 truncate">{approverName}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-forest-50 text-forest-700 border border-forest-100">
+                        {ACTION_TYPE_LABEL[step.action_type] ?? step.action_type}
+                      </span>
+                      {statusBadge}
+                    </div>
+                    {log?.comment && (
+                      <p className="mt-1 text-xs text-gray-500 italic">"{log.comment}"</p>
+                    )}
+                    {log?.created_at && (
+                      <p className="mt-0.5 text-[11px] text-gray-400">{new Date(log.created_at).toLocaleString('id-ID')}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const TransfersPage: React.FC = () => {
   useTitle('Transfers');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,7 +207,8 @@ const TransfersPage: React.FC = () => {
   const [isWarningOpen, setIsWarningOpen] = useState(false);
   const [isCheckingWorkflow, setIsCheckingWorkflow] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<any>(null);
-  const [selectedHistoryTransfer, setSelectedHistoryTransfer] = useState<Transfer | null>(null);
+  const [selectedHistoryTransferId, setSelectedHistoryTransferId] = useState<number | null>(null);
+  const [detailTransferId, setDetailTransferId] = useState<number | null>(null);
 
   // Auth user state
   const user = getStoredUser();
@@ -103,6 +219,27 @@ const TransfersPage: React.FC = () => {
 
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
+
+  const { data: detailData, isLoading: isDetailLoading } = useQuery<{ data: Transfer }>({
+    queryKey: ['transfers', detailTransferId],
+    enabled: detailTransferId !== null,
+    queryFn: async () => {
+      const response = await api.get(`/transfers/${detailTransferId}`);
+      return response.data;
+    },
+  });
+  const detailTransfer = detailData?.data ?? null;
+
+  const { data: historyData, isLoading: isHistoryLoading } = useQuery<{ data: Transfer }>({
+    queryKey: ['transfers', selectedHistoryTransferId, 'history'],
+    enabled: selectedHistoryTransferId !== null,
+    queryFn: async () => {
+      const response = await api.get(`/transfers/${selectedHistoryTransferId}`);
+      return response.data;
+    },
+    staleTime: 0,
+  });
+  const selectedHistoryTransfer = historyData?.data ?? null;
 
   const { data, isLoading } = useQuery<{ data: Transfer[] }>({
     queryKey: ['transfers'],
@@ -280,8 +417,18 @@ const TransfersPage: React.FC = () => {
   const columns: Column<Transfer>[] = [
     { key: 'transfer_code', label: 'Transfer Code', sortable: true },
     { key: 'type', label: 'Type' },
-    { key: 'from_estate_id', label: 'From' },
-    { key: 'to_estate_id', label: 'To' },
+    {
+      key: 'from_estate_id', label: 'From',
+      render: (_, item) => item.from_estate
+        ? <span>{item.from_estate.estate} <span className="text-xs text-gray-400">({item.from_estate.estate_id})</span></span>
+        : <span>{String(item.from_estate_id)}</span>,
+    },
+    {
+      key: 'to_estate_id', label: 'To',
+      render: (_, item) => item.to_estate
+        ? <span>{item.to_estate.estate} <span className="text-xs text-gray-400">({item.to_estate.estate_id})</span></span>
+        : <span>{String(item.to_estate_id)}</span>,
+    },
     { key: 'anggota_penerima.nama', label: 'Recipient', render: (_, item) => item.anggota_penerima?.nama || '-' },
     { key: 'transfer_date', label: 'Date', render: (val) => formatDate(String(val ?? '')) },
     {
@@ -304,9 +451,16 @@ const TransfersPage: React.FC = () => {
       label: '',
       render: (_, item) => (
         <div className="flex justify-end gap-2 pr-2">
+          <button
+            onClick={() => setDetailTransferId(item.id)}
+            className="text-forest-700 hover:text-forest-800 bg-forest-50 p-1.5 rounded-lg border border-forest-100 transition-colors"
+            title="Lihat Detail Transfer"
+          >
+            <Eye className="h-4 w-4" />
+          </button>
           {item.status === 'Approved' && item.type === 'Material' && (
             <button
-              onClick={() => setSelectedHistoryTransfer(item)}
+              onClick={() => setSelectedHistoryTransferId(item.id)}
               className="text-sky-700 hover:text-sky-800 bg-sky-50 p-1.5 rounded-lg border border-sky-100 transition-colors"
               title="View Material Transfer History"
             >
@@ -363,7 +517,7 @@ const TransfersPage: React.FC = () => {
         columns={columns}
         data={data?.data ?? []}
         isLoading={isLoading}
-        searchKeys={['transfer_code', 'from_estate_id', 'to_estate_id']}
+        searchKeys={['transfer_code', 'from_estate.estate_id', 'to_estate.estate_id']}
         searchPlaceholder="Search by code or estate..."
         rowKey={(item) => item.id}
         pageSize={15}
@@ -605,23 +759,145 @@ const TransfersPage: React.FC = () => {
       </Modal>
 
       <Modal
-        isOpen={!!selectedHistoryTransfer}
-        onClose={() => setSelectedHistoryTransfer(null)}
+        isOpen={detailTransferId !== null}
+        onClose={() => setDetailTransferId(null)}
+        title={`Detail Transfer${detailTransfer ? `: ${detailTransfer.transfer_code}` : ''}`}
+        description="Informasi lengkap dan status pengajuan transfer"
+        size="lg"
+      >
+        {isDetailLoading ? (
+          <div className="space-y-3 animate-pulse">
+            <div className="h-4 bg-gray-100 rounded w-3/4" />
+            <div className="h-4 bg-gray-100 rounded w-1/2" />
+            <div className="h-20 bg-gray-100 rounded" />
+          </div>
+        ) : detailTransfer ? (
+          <div className="space-y-5">
+            {/* Info grid */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Kode Transfer</p>
+                <p className="font-semibold text-gray-900">{detailTransfer.transfer_code}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Tipe</p>
+                <p className="font-semibold text-gray-900">{String(detailTransfer.type)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Dari Estate</p>
+                <p className="font-semibold text-gray-900">{detailTransfer.from_estate?.estate ?? String(detailTransfer.from_estate_id)}</p>
+                {detailTransfer.from_estate?.estate_id && <p className="text-[11px] text-gray-400">{detailTransfer.from_estate.estate_id}</p>}
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Ke Estate</p>
+                <p className="font-semibold text-gray-900">{detailTransfer.to_estate?.estate ?? String(detailTransfer.to_estate_id)}</p>
+                {detailTransfer.to_estate?.estate_id && <p className="text-[11px] text-gray-400">{detailTransfer.to_estate.estate_id}</p>}
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Status</p>
+                <span className={cn(
+                  'inline-block px-2 py-0.5 rounded-full text-xs font-semibold',
+                  detailTransfer.status === 'Approved'  ? 'bg-green-100 text-green-800'  :
+                  detailTransfer.status === 'Rejected'  ? 'bg-red-100 text-red-800'      :
+                  detailTransfer.status === 'Cancelled' ? 'bg-gray-100 text-gray-500'    :
+                  'bg-orange-100 text-orange-800'
+                )}>
+                  {String(detailTransfer.status)}
+                </span>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Tanggal</p>
+                <p className="font-semibold text-gray-900">{formatDate(String(detailTransfer.transfer_date ?? ''))}</p>
+              </div>
+            </div>
+
+            {detailTransfer.notes && (
+              <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1">Catatan</p>
+                <p className="text-gray-700">{String(detailTransfer.notes)}</p>
+              </div>
+            )}
+
+            {/* Items */}
+            {(detailTransfer.items ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Item Transfer</p>
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-500 font-bold uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Item</th>
+                        <th className="px-4 py-2 text-right">Qty</th>
+                        <th className="px-4 py-2 text-right">Stok Saat Ini</th>
+                        <th className="px-4 py-2 text-right">Proyeksi Sisa</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(detailTransfer.items as TransferItem[]).map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-2">
+                            <p className="font-medium text-gray-800">{item.item_name ?? item.item_id}</p>
+                            {item.item_name && <p className="text-[11px] text-gray-400 font-mono">{item.item_id}</p>}
+                          </td>
+                          <td className="px-4 py-2 text-right text-gray-700">{item.qty}</td>
+                          <td className="px-4 py-2 text-right text-gray-600">
+                            {item.current_stock !== null && item.current_stock !== undefined ? item.current_stock : '—'}
+                          </td>
+                          <td className={cn('px-4 py-2 text-right font-semibold',
+                            item.projected_stock !== null && item.projected_stock !== undefined
+                              ? item.projected_stock < 0 ? 'text-red-600' : 'text-green-700'
+                              : 'text-gray-400'
+                          )}>
+                            {item.projected_stock !== null && item.projected_stock !== undefined ? item.projected_stock : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Approval accordion */}
+            {(detailTransfer.approval_requests ?? []).length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Status Persetujuan</p>
+                {(detailTransfer.approval_requests as ApprovalRequest[]).map((req) => (
+                  <ApprovalAccordion key={req.id} request={req} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-gray-200 px-4 py-4 text-sm text-gray-400 text-center">
+                Tidak ada workflow approval terkait. Transfer ini diproses otomatis.
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        isOpen={selectedHistoryTransferId !== null}
+        onClose={() => setSelectedHistoryTransferId(null)}
         title={`Transfer History${selectedHistoryTransfer ? `: ${selectedHistoryTransfer.transfer_code}` : ''}`}
         description="Material stock movement created after final approval"
         size="lg"
       >
-        {selectedHistoryTransfer?.type !== 'Material' ? (
+        {isHistoryLoading ? (
+          <div className="space-y-3 animate-pulse">
+            <div className="h-4 bg-gray-100 rounded w-3/4" />
+            <div className="h-20 bg-gray-100 rounded" />
+          </div>
+        ) : selectedHistoryTransfer?.type !== 'Material' ? (
           <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-600">
             History mutasi stok hanya berlaku untuk transfer material.
           </div>
-        ) : (selectedHistoryTransfer.materialHistories?.length ?? 0) === 0 ? (
+        ) : (selectedHistoryTransfer?.material_histories?.length ?? 0) === 0 ? (
           <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-600">
             Belum ada riwayat mutasi. Ini biasanya berarti transfer belum final approved atau data lama belum punya history.
           </div>
         ) : (
           <div className="space-y-3">
-            {selectedHistoryTransfer?.materialHistories?.map((history) => (
+            {selectedHistoryTransfer?.material_histories?.map((history) => (
               <div key={history.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -629,7 +905,7 @@ const TransfersPage: React.FC = () => {
                       {history.source_material_code} <span className="text-gray-400">→</span> {history.destination_material_code}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {history.fromEstate?.estate_id ?? '-'} to {history.toEstate?.estate_id ?? '-'} • Qty {String(history.qty)}
+                      {history.from_estate?.estate_id ?? '-'} to {history.to_estate?.estate_id ?? '-'} • Qty {String(history.qty)}
                     </p>
                   </div>
                   <span className={cn(

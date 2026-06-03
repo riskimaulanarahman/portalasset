@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 // #7 FIX: SoftDeletes mencegah data asset hilang permanen
@@ -50,14 +52,29 @@ class Asset extends Model
         return $this->belongsTo(AssetReg::class, 'type_id');
     }
 
-    public function transactions()
+    public function transactions(): HasMany
     {
         return $this->hasMany(TransAsset::class, 'reg_id', 'reg_id');
     }
 
-    public function maintenances()
+    public function maintenances(): HasMany
     {
         return $this->hasMany(TransMaintenance::class, 'reg_id', 'reg_id');
+    }
+
+    public function conditions(): HasMany
+    {
+        return $this->hasMany(TransCondition::class, 'reg_id', 'reg_id')->orderByDesc('date');
+    }
+
+    public function latestCondition(): HasOne
+    {
+        return $this->hasOne(TransCondition::class, 'reg_id', 'reg_id')->latestOfMany('date');
+    }
+
+    public function writeOffRequests(): HasMany
+    {
+        return $this->hasMany(TransAsset::class, 'reg_id', 'reg_id')->writeOff();
     }
 
     public function vendor()

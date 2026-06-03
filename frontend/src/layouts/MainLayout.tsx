@@ -5,7 +5,7 @@ import {
   ClipboardList, History, LogOut, Menu, User as UserIcon,
   ArrowLeftRight, Bell, Search, Moon, Sun, ChevronRight,
   Users, Wallet, Monitor, HelpCircle, Factory, Tag, ClipboardCheck, Play,
-  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2
+  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2, Activity
 } from 'lucide-react';
 import { cn, getStoredUser, toggleDarkMode, isDarkMode } from '../lib/utils';
 import { useToast } from '../components/ui/Toast';
@@ -73,9 +73,10 @@ const navigation: NavSection[] = [
   {
     label: 'Inventory',
     items: [
-      { to: '/assets',       icon: <History className="h-4 w-4" />,       label: 'Assets'       },
-      { to: '/materials',     icon: <Package className="h-4 w-4" />,       label: 'Materials'    },
-      { to: '/software',     icon: <Monitor className="h-4 w-4" />,       label: 'Software'     },
+      { to: '/assets',            icon: <History className="h-4 w-4" />,   label: 'Assets'        },
+      { to: '/asset-conditions',  icon: <Activity className="h-4 w-4" />,  label: 'Kondisi Aset'  },
+      { to: '/materials',         icon: <Package className="h-4 w-4" />,   label: 'Materials'     },
+      { to: '/software',          icon: <Monitor className="h-4 w-4" />,   label: 'Software'      },
     ],
   },
   {
@@ -254,7 +255,11 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const visibleNavigation = navigation
     .map((section) => ({
       ...section,
-      items: filterNavItems(section.items),
+      items: filterNavItems(section.items).map((item) =>
+        item.to === '/approvals' && pendingApprovalCount > 0
+          ? { ...item, badge: pendingApprovalCount > 99 ? '99+' : String(pendingApprovalCount) }
+          : item
+      ),
     }))
     .filter((section) => section.items.length > 0);
 

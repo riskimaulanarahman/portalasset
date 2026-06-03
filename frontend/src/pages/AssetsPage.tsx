@@ -6,7 +6,7 @@ import api from '../api/axios';
 import DataTable, { Column } from '../components/DataTable';
 import Modal from '../components/Modal';
 import AssetForm from '../components/forms/AssetForm';
-import Badge from '../components/ui/Badge';
+import Badge, { kondisiBadge } from '../components/ui/Badge';
 import { useToast } from '../components/ui/Toast';
 import useTitle from '../hooks/useTitle';
 import { showConfirm } from '../utils/SwalUtils';
@@ -16,17 +16,18 @@ import { hasStoredPermission } from '../lib/access';
 
 interface Asset {
   [key: string]: any;
-  reg_id:      string;
-  asset_no:    string;
-  type:        string;
-  manufacture: string;
-  series:      string;
-  section?:    { section?: string };
-  vendor?:     { nama?: string };
-  estate?:     { estate?: string, estate_id?: string };
-  alokasi:     string;
-  not_active:  boolean;
-  date?:       string;
+  reg_id:           string;
+  asset_no:         string;
+  type:             string;
+  manufacture:      string;
+  series:           string;
+  section?:         { section?: string };
+  vendor?:          { nama?: string };
+  estate?:          { estate?: string, estate_id?: string };
+  alokasi:          string;
+  not_active:       boolean;
+  date?:            string;
+  latest_condition?: { kondisi?: string; date?: string } | null;
 }
 
 const AssetsPage: React.FC = () => {
@@ -174,6 +175,11 @@ const AssetsPage: React.FC = () => {
     },
     { key: 'alokasi', label: 'Alokasi' },
     { key: 'date',    label: 'Date', render: (val) => formatDate(String(val ?? '')) },
+    {
+      key: 'latest_condition',
+      label: 'Kondisi',
+      render: (val) => kondisiBadge((val as Asset['latest_condition'])?.kondisi),
+    },
     {
       key: 'not_active',
       label: 'Status',

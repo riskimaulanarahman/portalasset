@@ -73,3 +73,11 @@ export function txTypeBadge(type: string) {
 export function statusBadge(notActive: boolean) {
   return notActive ? <InactiveBadge /> : <ActiveBadge />;
 }
+
+export function kondisiBadge(kondisi?: string | null) {
+  if (!kondisi) return <Badge variant="default">—</Badge>;
+  if (kondisi === 'Good')   return <Badge variant="active" dot>Good</Badge>;
+  if (kondisi === 'Bad')    return <Badge variant="pending" dot>Bad</Badge>;
+  if (kondisi === 'Broken') return <Badge variant="inactive" dot>Broken</Badge>;
+  return <Badge variant="default">{kondisi}</Badge>;
+}

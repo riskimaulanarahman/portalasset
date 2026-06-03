@@ -11,6 +11,7 @@ use App\Models\Estate;
 use App\Models\Material;
 use App\Models\Transfer;
 use App\Models\TransferItem;
+use App\Models\User;
 use App\Services\MaterialTransferService;
 use App\Mail\TransferCreatedMail;
 use Illuminate\Http\Request;
@@ -162,12 +163,57 @@ class TransferController extends Controller
             'toEstate',
             'items',
             'approvalRequests.logs.user',
-            'approvalRequests.workflow.steps',
+            'approvalRequests.workflow.steps.user',
             'anggotaPenerima',
             'materialHistories.fromEstate',
             'materialHistories.toEstate',
         ])->findOrFail($id);
         $this->ensureTransferAccess($transfer);
+
+        // Enrich items with name, current stock, and projected stock
+        $materialIds = $transfer->items->where('item_type', 'Material')->pluck('item_id');
+        $assetIds    = $transfer->items->where('item_type', 'Asset')->pluck('item_id');
+
+        $materials = $materialIds->isNotEmpty()
+            ? Material::whereIn('code', $materialIds)->get(['code', 'nama', 'stock'])->keyBy('code')
+            : collect();
+
+        $assets = $assetIds->isNotEmpty()
+            ? Asset::whereIn('reg_id', $assetIds)->get(['reg_id', 'asset_no', 'type', 'manufacture', 'series'])->keyBy('reg_id')
+            : collect();
+
+        foreach ($transfer->items as $item) {
+            if ($item->item_type === 'Material') {
+                $mat = $materials[$item->item_id] ?? null;
+                $item->item_name       = $mat?->nama ?? $item->item_id;
+                $item->current_stock   = $mat?->stock ?? null;
+                $item->projected_stock = $mat !== null ? ($mat->stock - $item->qty) : null;
+            } else {
+                $ast  = $assets[$item->item_id] ?? null;
+                $name = implode(' — ', array_filter([$ast?->asset_no, $ast?->type, $ast?->manufacture, $ast?->series]));
+                $item->item_name       = $name ?: $item->item_id;
+                $item->current_stock   = null;
+                $item->projected_stock = null;
+            }
+        }
+
+        // Enrich role-based steps with actual user names from destination estate
+        foreach ($transfer->approvalRequests as $approvalRequest) {
+            if (!$approvalRequest->workflow) continue;
+            foreach ($approvalRequest->workflow->steps as $step) {
+                if ($step->user_id) {
+                    $step->assignee_names = $step->user ? [$step->user->name] : [];
+                } else if ($step->role_name) {
+                    $step->assignee_names = User::whereHas('role', fn($q) => $q->where('name', $step->role_name))
+                        ->where('not_active', false)
+                        ->where('estate_id', $transfer->to_estate_id)
+                        ->pluck('name')
+                        ->toArray();
+                } else {
+                    $step->assignee_names = [];
+                }
+            }
+        }
 
         return response()->json(['data' => $transfer]);
     }
