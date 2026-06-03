@@ -41,6 +41,22 @@ class SendTransferBeritaAcaraJob implements ShouldQueue
             return;
         }
 
+        $mailer   = config('mail.default');
+        $notReady = in_array($mailer, ['log', 'array'])
+            || ($mailer === 'smtp'
+                && in_array(config('mail.mailers.smtp.host', '127.0.0.1'), ['127.0.0.1', 'localhost'])
+                && empty(config('mail.mailers.smtp.username')));
+
+        if ($notReady) {
+            Log::info('[NOTIF] Mail belum dikonfigurasi, email tidak terkirim.', [
+                'type'     => 'TransferApprovedMail',
+                'transfer' => $this->transferId,
+                'to'       => $this->toEmails,
+                'cc'       => $this->ccEmail,
+            ]);
+            return;
+        }
+
         try {
             $transfer = Transfer::with(['fromEstate', 'toEstate', 'items', 'approvalRequests.logs.user'])->find($this->transferId);
 
