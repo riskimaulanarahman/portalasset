@@ -11,30 +11,52 @@ import { useToast } from '../components/ui/Toast';
 import useTitle from '../hooks/useTitle';
 import { showConfirm } from '../utils/SwalUtils';
 
-import { formatDate, getStoredUser, exportToCSV, isHeadOfficeUser } from '../lib/utils';
+import { formatDate, getStoredUser, exportToCSV, isHeadOfficeUser, parseBoolean } from '../lib/utils';
 import { hasStoredPermission } from '../lib/access';
 
 interface Asset {
-  [key: string]: any;
+  [key: string]: unknown;
   reg_id:           string;
   asset_no:         string;
   type:             string;
   manufacture:      string;
   series:           string;
-  section?:         { section?: string };
   vendor?:          { nama?: string };
   estate?:          { estate?: string, estate_id?: string };
+  department?:      { name?: string; code?: string | null } | null;
+  division?:        { name?: string; code?: string | null } | null;
+  anggota?:         { sap_id?: string; nama?: string } | null;
+  anggota_id?:      string | null;
+  asset_department_id?: number | null;
+  asset_division_id?: number | null;
   alokasi:          string;
   not_active:       boolean;
   date?:            string;
   latest_condition?: { kondisi?: string; date?: string } | null;
 }
 
+interface EstateOption {
+  id: number;
+  estate: string;
+  estate_id: string;
+}
+
+const getApiMessage = (err: unknown, fallback: string) => {
+  const apiError = err as { response?: { data?: { message?: string } } };
+
+  return apiError.response?.data?.message || fallback;
+};
+
 const AssetsPage: React.FC = () => {
   useTitle('Physical Assets');
   const navigate = useNavigate();
   const user = getStoredUser();
   const isHoUser = isHeadOfficeUser(); // #22 FIX: use centralized helper
+  const isAdminUser = user.role?.name === 'admin';
+  const needsAssetAccessSetup = !isHoUser
+    && !isAdminUser
+    && (user.asset_departments?.length ?? 0) === 0
+    && (user.asset_divisions?.length ?? 0) === 0;
   const canCreateAsset = hasStoredPermission('create-assets');
   const canEditAsset = hasStoredPermission('edit-assets');
   const canDeleteAsset = hasStoredPermission('delete-assets');
@@ -45,7 +67,7 @@ const AssetsPage: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<Asset | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const { data: estates } = useQuery<any[]>({
+  const { data: estates } = useQuery<EstateOption[]>({
     queryKey: ['estates'],
     queryFn: async () => {
       const resp = await api.get('/estates');
@@ -89,8 +111,8 @@ const AssetsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
       success('Asset deleted', 'Record removed successfully.');
     },
-    onError: (err: any) => {
-      const msg = err.response?.data?.message || 'Could not remove the asset.';
+    onError: (err: unknown) => {
+      const msg = getApiMessage(err, 'Could not remove the asset.');
       toastError('Delete failed', msg);
     },
   });
@@ -118,12 +140,14 @@ const AssetsPage: React.FC = () => {
       type:        a.type ?? '',
       manufacture: a.manufacture ?? '',
       series:      a.series ?? '',
-      section:     a.section?.section ?? '',
       vendor:      a.vendor?.nama ?? '',
       estate:      a.estate?.estate ?? '',
+      department:  a.department?.name ?? '',
+      division:    a.division?.name ?? '',
+      assigned_member: a.anggota?.nama ?? '',
       alokasi:     a.alokasi ?? '',
       date:        a.date ?? '',
-      status:      a.not_active ? 'Inactive' : 'Active',
+      status:      parseBoolean(a.not_active) ? 'Inactive' : 'Active',
     }));
     exportToCSV(rows, [
       { key: 'reg_id',      label: 'Reg ID' },
@@ -131,9 +155,11 @@ const AssetsPage: React.FC = () => {
       { key: 'type',        label: 'Tipe' },
       { key: 'manufacture', label: 'Manufaktur' },
       { key: 'series',      label: 'Series' },
-      { key: 'section',     label: 'Section' },
       { key: 'vendor',      label: 'Vendor' },
       { key: 'estate',      label: 'Estate' },
+      { key: 'department',  label: 'Department' },
+      { key: 'division',    label: 'Divisi' },
+      { key: 'assigned_member', label: 'Assigned Member' },
       { key: 'alokasi',     label: 'Alokasi' },
       { key: 'date',        label: 'Tanggal' },
       { key: 'status',      label: 'Status' },
@@ -159,11 +185,6 @@ const AssetsPage: React.FC = () => {
     { key: 'manufacture', label: 'Manufacturer',sortable: true },
     { key: 'series',      label: 'Series' },
     {
-      key: 'section',
-      label: 'Section',
-      render: (val) => String((val as Asset['section'])?.section ?? '-'),
-    },
-    {
       key: 'vendor',
       label: 'Vendor',
       render: (val) => String((val as Asset['vendor'])?.nama ?? '-'),
@@ -172,6 +193,21 @@ const AssetsPage: React.FC = () => {
       key: 'estate',
       label: 'Estate',
       render: (val) => String((val as Asset['estate'])?.estate ?? '-'),
+    },
+    {
+      key: 'department',
+      label: 'Department',
+      render: (val) => String((val as Asset['department'])?.name ?? '-'),
+    },
+    {
+      key: 'division',
+      label: 'Divisi',
+      render: (val) => String((val as Asset['division'])?.name ?? '-'),
+    },
+    {
+      key: 'anggota',
+      label: 'Assigned Member',
+      render: (val) => String((val as Asset['anggota'])?.nama ?? '-'),
     },
     { key: 'alokasi', label: 'Alokasi' },
     { key: 'date',    label: 'Date', render: (val) => formatDate(String(val ?? '')) },
@@ -184,7 +220,7 @@ const AssetsPage: React.FC = () => {
       key: 'not_active',
       label: 'Status',
       render: (val) =>
-        val ? (
+        parseBoolean(val) ? (
           <Badge variant="inactive" dot>Inactive</Badge>
         ) : (
           <Badge variant="active" dot>Active</Badge>
@@ -220,7 +256,7 @@ const AssetsPage: React.FC = () => {
             disabled={!isHoUser}
           >
             {isHoUser && <option value="">All Estates</option>}
-            {(estates ?? []).map((e: any) => (
+            {(estates ?? []).map((e) => (
               <option key={e.id} value={e.id}>{e.estate} ({e.estate_id})</option>
             ))}
           </select>
@@ -246,6 +282,12 @@ const AssetsPage: React.FC = () => {
         </div>
       </div>
 
+      {needsAssetAccessSetup && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-800">
+          Akses department/divisi belum diatur oleh admin.
+        </div>
+      )}
+
       <DataTable<Asset>
         columns={columns}
         data={data ?? []}
@@ -257,7 +299,7 @@ const AssetsPage: React.FC = () => {
         onDelete={canDeleteAsset ? handleDelete : undefined}
         rowKey={(item) => item.reg_id}
         pageSize={10}
-        emptyMessage="No assets registered yet"
+        emptyMessage={needsAssetAccessSetup ? 'Akses department/divisi belum diatur oleh admin' : 'No assets registered yet'}
       />
 
       <Modal

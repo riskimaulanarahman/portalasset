@@ -12,15 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('assets', function (Blueprint $table) {
-            $table->foreignId('estate_id')->nullable()->after('reg_id')->constrained('estates')->restrictOnDelete();
+            $table->foreignId('estate_id')->nullable()->after('reg_id')->constrained('estates')->noActionOnDelete();
         });
 
         Schema::table('materials', function (Blueprint $table) {
-            $table->foreignId('estate_id')->nullable()->after('code')->constrained('estates')->restrictOnDelete();
+            $table->foreignId('estate_id')->nullable()->after('code')->constrained('estates')->noActionOnDelete();
         });
 
         Schema::table('software', function (Blueprint $table) {
-            $table->foreignId('estate_id')->nullable()->after('id')->constrained('estates')->restrictOnDelete();
+            $table->foreignId('estate_id')->nullable()->after('id')->constrained('estates')->noActionOnDelete();
         });
     }
 

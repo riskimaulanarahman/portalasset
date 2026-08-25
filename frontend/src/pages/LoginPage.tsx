@@ -42,7 +42,12 @@ const LoginPage: React.FC = () => {
           setError(field as any, { message: messages[0] });
         });
       } else {
-        showError('Login failed', 'Please check your connection.');
+        const message =
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          (error.request ? 'Tidak ada response dari server API. Pastikan backend berjalan dan URL API benar.' : error.message);
+
+        showError('Login failed', message);
       }
     }
   };

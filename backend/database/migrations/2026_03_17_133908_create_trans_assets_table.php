@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->date('date');
             $table->string('reg_id', 10);
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
             $table->string('sap1', 15)->nullable()->comment('SAP ID pemegang sebelumnya');
             $table->string('nama1', 50)->nullable()->comment('Nama pemegang sebelumnya');
             $table->string('from_', 20)->nullable()->comment('Username/estate asal transfer');

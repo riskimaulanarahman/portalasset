@@ -34,7 +34,7 @@ class ManufacturerController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100|unique:manufacturers,name',
+            'name' => 'required|string|max:50|unique:manufacturers,name',
         ]);
 
         $manufacturer = Manufacturer::create([
@@ -62,7 +62,7 @@ class ManufacturerController extends Controller implements HasMiddleware
     public function update(Request $request, Manufacturer $manufacturer)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100|unique:manufacturers,name,' . $manufacturer->id,
+            'name' => 'required|string|max:50|unique:manufacturers,name,' . $manufacturer->id,
         ]);
 
         $manufacturer->update([

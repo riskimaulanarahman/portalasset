@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
 const manufacturerSchema = z.object({
-  name: z.string().min(1, 'Manufacturer name is required').max(100),
+  name: z.string().min(1, 'Manufacturer name is required').max(50),
 });
 
 type ManufacturerFormValues = z.infer<typeof manufacturerSchema>;

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Textarea } from '../ui/FormFields';
 import Button from '../ui/Button';
-import Badge, { kondisiBadge } from '../ui/Badge';
+import { kondisiBadge } from '../ui/Badge';
 
 const schema = z.object({
   keterangan: z.string().min(10, 'Alasan write-off minimal 10 karakter').max(500),

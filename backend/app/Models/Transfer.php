@@ -49,6 +49,11 @@ class Transfer extends Model
         return $this->hasMany(MaterialTransferHistory::class)->latest('processed_at');
     }
 
+    public function assetHistories()
+    {
+        return $this->hasMany(AssetTransferHistory::class)->latest('processed_at');
+    }
+
     public function anggotaPenerima()
     {
         return $this->belongsTo(Anggota::class, 'anggota_id', 'sap_id');

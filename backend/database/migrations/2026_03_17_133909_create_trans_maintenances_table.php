@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('trans_maintenances', function (Blueprint $table) {
             $table->id();
             $table->string('reg_id', 10);
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
             $table->date('terima')->nullable()->comment('Tanggal diterima maintenance');
             $table->date('target')->nullable();
             $table->date('selesai')->nullable()->comment('Tanggal selesai maintenance');

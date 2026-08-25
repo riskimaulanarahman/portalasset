@@ -4,10 +4,11 @@ import {
   LayoutDashboard, Database, Map, Layers, Package,
   ClipboardList, History, LogOut, Menu, User as UserIcon,
   ArrowLeftRight, Bell, Search, Moon, Sun, ChevronRight,
-  Users, Wallet, Monitor, HelpCircle, Factory, Tag, ClipboardCheck, Play,
-  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2, Activity
+  Users, Wallet, HelpCircle, Factory, Tag, ClipboardCheck, Play,
+  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2, Activity,
+  UserCheck, GitBranch,
 } from 'lucide-react';
-import { cn, getStoredUser, toggleDarkMode, isDarkMode } from '../lib/utils';
+import { cn, getStoredUser, toggleDarkMode, isDarkMode, isStoredAdmin } from '../lib/utils';
 import { useToast } from '../components/ui/Toast';
 import { showConfirm } from '../utils/SwalUtils';
 import { useSettings } from '../hooks/useSettings';
@@ -53,6 +54,7 @@ const navigation: NavSection[] = [
           { to: '/sections',       icon: <Database className="h-4 w-4" />,      label: 'Sections'       },
           { to: '/estates',        icon: <Map className="h-4 w-4" />,           label: 'Estates'        },
           { to: '/cost-centers',   icon: <Wallet className="h-4 w-4" />,        label: 'Cost Centers'   },
+          { to: '/user-activations', icon: <UserCheck className="h-4 w-4" />, label: 'User Activation' },
           { to: '/anggotas',       icon: <Users className="h-4 w-4" />,         label: 'Members'        },
         ]
       },
@@ -61,6 +63,8 @@ const navigation: NavSection[] = [
         icon: <Package className="h-4 w-4" />,
         children: [
           { to: '/asset-types',   icon: <Tag className="h-4 w-4" />,           label: 'Asset Types'  },
+          { to: '/asset-departments', icon: <Building2 className="h-4 w-4" />, label: 'Asset Departments' },
+          { to: '/asset-divisions', icon: <GitBranch className="h-4 w-4" />,   label: 'Asset Divisions' },
           { to: '/asset-regs',    icon: <ClipboardList className="h-4 w-4" />, label: 'Asset Reg'    },
           { to: '/categories',    icon: <Layers className="h-4 w-4" />,        label: 'Categories'   },
           { to: '/manufacturers', icon: <Factory className="h-4 w-4" />,       label: 'Manufacturers'},
@@ -76,7 +80,7 @@ const navigation: NavSection[] = [
       { to: '/assets',            icon: <History className="h-4 w-4" />,   label: 'Assets'        },
       { to: '/asset-conditions',  icon: <Activity className="h-4 w-4" />,  label: 'Kondisi Aset'  },
       { to: '/materials',         icon: <Package className="h-4 w-4" />,   label: 'Materials'     },
-      { to: '/software',          icon: <Monitor className="h-4 w-4" />,   label: 'Software'      },
+      { to: '/material-stock-opnames', icon: <ClipboardCheck className="h-4 w-4" />, label: 'Stock Opname' },
     ],
   },
   {
@@ -208,6 +212,8 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const user     = getStoredUser();
+  const isAdminUser = isStoredAdmin();
+  const hasOperationalAccess = isAdminUser || (!user.not_active && !!user.estate_id);
   const { success } = useToast();
   const queryClient = useQueryClient();
 
@@ -238,6 +244,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // #15 FIX: Poll jumlah approval pending setiap 60 detik untuk badge notifikasi
   const { data: approvalsData } = useQuery<{ data: unknown[] }>({
     queryKey: ['notification-approvals'],
+    enabled: hasOperationalAccess,
     queryFn: async () => {
       const response = await api.get('/approvals/my-approvals');
       return response.data;
@@ -252,7 +259,13 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   ).length;
 
   const appName = getSetting('app_name', 'Portal Asset');
+  const estateCode = user.estate?.estate_id ? String(user.estate.estate_id).trim() : '';
+  const estateName = user.estate?.estate ? String(user.estate.estate).trim() : '';
+  const estateLabel = estateCode && estateName
+    ? `${estateCode} - ${estateName}`
+    : estateName || estateCode || (user.estate_id ? `Estate ${user.estate_id}` : 'No estate');
   const visibleNavigation = navigation
+    .filter((section) => section.label !== 'Master Data' || isAdminUser)
     .map((section) => ({
       ...section,
       items: filterNavItems(section.items).map((item) =>
@@ -300,6 +313,10 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   function filterNavItems(items: NavItem[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {
+      if (!hasOperationalAccess && item.to !== '/dashboard') {
+        return acc;
+      }
+
       if (item.children?.length) {
         const children = filterNavItems(item.children);
         if (children.length > 0) {
@@ -381,6 +398,9 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <p className="text-[10px] text-forest-400 font-medium truncate uppercase tracking-widest">
                 {user.role?.name || user.role_id || 'Role'}
               </p>
+              <p className="text-[10px] text-forest-300 font-semibold truncate">
+                {estateLabel}
+              </p>
             </div>
           </div>
         )}
@@ -443,6 +463,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
 
           {/* #16 FIX: Global search with autocomplete */}
+          {hasOperationalAccess && (
           <div className="flex-1 max-w-xs hidden lg:block relative">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-forest-300 pointer-events-none" />
@@ -488,6 +509,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
             )}
           </div>
+          )}
 
           {/* Right actions */}
           <div className="ml-auto flex items-center gap-2">
@@ -501,6 +523,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </button>
 
             {/* Help Guide */}
+            {hasOperationalAccess && (
             <Link
               to="/guide"
               className="flex items-center justify-center w-8 h-8 rounded-lg text-forest-500 hover:bg-forest-50 hover:text-forest-700 transition-colors"
@@ -508,8 +531,10 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             >
               <HelpCircle className="h-4 w-4" />
             </Link>
+            )}
 
             {/* #15 FIX: Notification bell dengan real pending approval count */}
+            {hasOperationalAccess && (
             <Link
               to="/approvals"
               className="relative flex items-center justify-center w-8 h-8 rounded-lg text-forest-500 hover:bg-forest-50 hover:text-forest-700 transition-colors"
@@ -524,6 +549,7 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </span>
               )}
             </Link>
+            )}
 
             {/* Profile — click avatar to change password (#14 FIX) */}
             <div className="flex items-center gap-2.5 pl-3 border-l border-gray-100">
@@ -533,6 +559,9 @@ const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </span>
                 <span className="text-[10px] text-forest-500 font-medium uppercase tracking-widest">
                   {user.role?.name || user.role_id || 'Role'}
+                </span>
+                <span className="text-[10px] text-forest-500 font-semibold leading-tight max-w-44 truncate">
+                  {estateLabel}
                 </span>
               </div>
               <button

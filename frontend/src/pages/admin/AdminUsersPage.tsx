@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserCog, Plus } from 'lucide-react';
 import api from '../../api/axios';
@@ -9,6 +9,17 @@ import useTitle from '../../hooks/useTitle';
 import UserForm from '../../components/forms/UserForm';
 import { showConfirm } from '../../utils/SwalUtils';
 import Badge from '../../components/ui/Badge';
+
+const getApiErrorMessage = (err: any, fallback: string) => {
+  const errors = err.response?.data?.errors;
+  if (errors) {
+    const firstKey = Object.keys(errors)[0];
+    const firstMessage = firstKey ? errors[firstKey]?.[0] : null;
+    if (firstMessage) return firstMessage;
+  }
+
+  return err.response?.data?.message || fallback;
+};
 
 const AdminUsersPage: React.FC = () => {
   useTitle('User Management');
@@ -42,6 +53,55 @@ const AdminUsersPage: React.FC = () => {
     },
   });
 
+  const { data: assetDepartmentsData } = useQuery<any[]>({
+    queryKey: ['asset-departments'],
+    queryFn: async () => {
+      const res = await api.get('/asset-departments');
+      return res.data.data;
+    },
+  });
+
+  const { data: assetDivisionsData } = useQuery<any[]>({
+    queryKey: ['asset-divisions'],
+    queryFn: async () => {
+      const res = await api.get('/asset-divisions');
+      return res.data.data;
+    },
+  });
+
+  const estateLookup = useMemo(() => {
+    const entries = estatesData ?? [];
+    return new Map<string, any>(
+      entries.flatMap((estate) => [
+        [String(estate.id), estate],
+        [String(estate.estate_id), estate],
+      ]),
+    );
+  }, [estatesData]);
+
+  const formatEstateLabel = useCallback((user: any) => {
+    const estate = user.estate ?? estateLookup.get(String(user.estate_id ?? ''));
+
+    if (estate?.estate_id && estate?.estate) {
+      return `${estate.estate_id} - ${estate.estate}`;
+    }
+
+    if (estate?.estate) return estate.estate;
+    if (estate?.estate_id) return estate.estate_id;
+    if (user.estate_id === 'HO') return 'HO - Head Office';
+    if (user.estate_id) return String(user.estate_id);
+
+    return '-';
+  }, [estateLookup]);
+
+  const users = useMemo(
+    () => (usersData?.data ?? []).map((user) => ({
+      ...user,
+      estate_label: formatEstateLabel(user),
+    })),
+    [usersData, formatEstateLabel],
+  );
+
   const createMutation = useMutation({
     mutationFn: (payload: any) => api.post('/users', payload),
     onSuccess: () => {
@@ -50,7 +110,7 @@ const AdminUsersPage: React.FC = () => {
       success('Success', 'User created successfully.');
     },
     onError: (err: any) => {
-      toastError('Failed', err.response?.data?.message || 'Could not save user.');
+      toastError('Failed', getApiErrorMessage(err, 'Could not save user.'));
     },
   });
 
@@ -62,7 +122,7 @@ const AdminUsersPage: React.FC = () => {
       success('Success', 'User updated successfully.');
     },
     onError: (err: any) => {
-      toastError('Failed', err.response?.data?.message || 'Could not save user.');
+      toastError('Failed', getApiErrorMessage(err, 'Could not save user.'));
     },
   });
 
@@ -104,7 +164,16 @@ const AdminUsersPage: React.FC = () => {
   const columns: Column<any>[] = [
     { key: 'name', label: 'Name', sortable: true, className: 'font-semibold' },
     { key: 'username', label: 'Username', sortable: true },
-    { key: 'estate_id', label: 'Estate', sortable: true },
+    {
+      key: 'estate_label',
+      label: 'Estate',
+      sortable: true,
+      render: (val: any) => (
+        <span className="text-xs font-semibold text-forest-700">
+          {val || '-'}
+        </span>
+      ),
+    },
     {
       key: 'role',
       label: 'Role',
@@ -115,11 +184,24 @@ const AdminUsersPage: React.FC = () => {
       ),
     },
     {
+      key: 'asset_access',
+      label: 'Asset Access',
+      render: (_: any, row: any) => {
+        const departmentCount = row.asset_departments?.length ?? 0;
+        const divisionCount = row.asset_divisions?.length ?? 0;
+        return (
+          <span className="text-xs font-semibold text-forest-700">
+            {departmentCount || divisionCount ? `${departmentCount} dept / ${divisionCount} divisi` : 'Belum diatur'}
+          </span>
+        );
+      },
+    },
+    {
       key: 'not_active',
       label: 'Status',
       render: (val: any) => (
         <Badge variant={!val ? 'active' : 'inactive'} dot>
-          {!val ? 'Active' : 'Disabled'}
+          {!val ? 'Active' : 'Pending Activation'}
         </Badge>
       ),
     },
@@ -148,11 +230,11 @@ const AdminUsersPage: React.FC = () => {
 
       <DataTable<any>
         columns={columns}
-        data={usersData?.data ?? []}
+        data={users}
         isLoading={isLoading}
         onEdit={handleOpenModal}
         onDelete={handleDelete}
-        searchKeys={['name', 'username', 'email']}
+        searchKeys={['name', 'username', 'email', 'estate_label']}
         searchPlaceholder="Search users..."
         rowKey={(item: any) => item.id}
         pageSize={15}
@@ -170,6 +252,8 @@ const AdminUsersPage: React.FC = () => {
           initialData={selectedUser}
           roles={rolesData?.data ?? []}
           estates={estatesData ?? []}
+          assetDepartments={assetDepartmentsData ?? []}
+          assetDivisions={assetDivisionsData ?? []}
           onSubmit={handleSubmit}
           onCancel={() => setIsModalOpen(false)}
           isSubmitting={createMutation.isPending || updateMutation.isPending}

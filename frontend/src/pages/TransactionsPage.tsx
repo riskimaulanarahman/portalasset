@@ -36,6 +36,7 @@ interface MaterialOption {
 	code: string;
 	nama: string;
 	stock?: number;
+	unit?: { nama?: string } | null;
 	not_active?: boolean;
 }
 
@@ -117,6 +118,7 @@ const TransactionsPage: React.FC = () => {
 	);
 
 	const currentStock  = typeof selectedMaterial?.stock === 'number' ? selectedMaterial.stock : null;
+	const selectedUnitName = selectedMaterial?.unit?.nama || '-';
 	const previewStock  =
 		currentStock !== null && selectedQty > 0
 			? Number((txType === 'IN' ? currentStock + selectedQty : currentStock - selectedQty).toFixed(2))
@@ -359,7 +361,8 @@ const TransactionsPage: React.FC = () => {
 							<div className="flex items-center gap-2">
 								<span className="text-xs text-gray-500">Current Stock</span>
 								<span className="font-bold text-gray-900 text-base">
-									{currentStock !== null ? currentStock : '—'}
+									{currentStock !== null ? currentStock : '-'}
+									<span className="ml-1 text-xs font-semibold text-gray-500">{selectedUnitName}</span>
 								</span>
 							</div>
 							{previewStock !== null && (
@@ -373,13 +376,14 @@ const TransactionsPage: React.FC = () => {
 											: 'text-orange-600'
 									}`}>
 										{previewStock}
+										<span className="ml-1 text-xs font-semibold text-gray-500">{selectedUnitName}</span>
 									</span>
 									<span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
 										txType === 'IN'
 											? 'bg-emerald-100 text-emerald-700'
 											: 'bg-red-100 text-red-600'
 									}`}>
-										{txType === 'IN' ? `+${selectedQty}` : `-${selectedQty}`}
+										{txType === 'IN' ? `+${selectedQty}` : `-${selectedQty}`} {selectedUnitName}
 									</span>
 									{previewStock < 0 && (
 										<span className="text-xs font-semibold text-red-600">⚠ Stok minus</span>
@@ -398,6 +402,7 @@ const TransactionsPage: React.FC = () => {
 							min="0.1"
 							required
 							placeholder="0.0"
+							hint={selectedCode ? `Satuan: ${selectedUnitName}` : undefined}
 							onChange={(e) => setSelectedQty(parseFloat(e.target.value) || 0)}
 						/>
 						<Input

@@ -218,7 +218,7 @@ const MaterialsPage: React.FC = () => {
         data={data}
         isLoading={isLoading}
         searchPlaceholder="Search materials by code or name…"
-        onSearch={(val) => {
+        onSearch={() => {
           // Ketika user mengetik, reset ke halaman 1 (search ditangani server via query param)
           setPage(1);
         }}

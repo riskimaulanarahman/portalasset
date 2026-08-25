@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('code', 25)->primary();
             $table->string('nama', 150);
             $table->string('type', 25)->nullable();
-            $table->foreignId('category_id')->constrained('categories')->restrictOnDelete();
+            $table->foreignId('category_id')->constrained('categories')->noActionOnDelete();
             $table->string('unit', 10)->nullable();
             $table->string('matcode', 10)->nullable();
             $table->string('sn', 25)->nullable();
@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('price', 15, 2)->nullable();
             $table->decimal('stock', 10, 1)->default(0)->comment('Stok awal/opening stock');
             $table->string('pt', 150)->nullable();
-            $table->foreignId('section_id')->constrained('sections')->restrictOnDelete();
+            $table->foreignId('section_id')->constrained('sections')->noActionOnDelete();
             $table->boolean('not_active')->default(false);
             $table->string('create_by', 20)->nullable();
             $table->dateTime('create_date')->nullable();

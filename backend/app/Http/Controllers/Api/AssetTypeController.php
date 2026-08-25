@@ -34,7 +34,7 @@ class AssetTypeController extends Controller implements HasMiddleware
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100|unique:asset_types,name',
+            'name' => 'required|string|max:25|unique:asset_types,name',
         ]);
 
         $assetType = AssetType::create([
@@ -62,7 +62,7 @@ class AssetTypeController extends Controller implements HasMiddleware
     public function update(Request $request, AssetType $assetType)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100|unique:asset_types,name,' . $assetType->id,
+            'name' => 'required|string|max:25|unique:asset_types,name,' . $assetType->id,
         ]);
 
         $assetType->update([

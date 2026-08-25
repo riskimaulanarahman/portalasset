@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Concerns\InteractsWithEstateScope;
 use App\Http\Controllers\Controller;
 use App\Models\CostCenter;
+use App\Models\Estate;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Validation\ValidationException;
 
 class CostCenterController extends Controller implements HasMiddleware
 {
@@ -25,11 +27,12 @@ class CostCenterController extends Controller implements HasMiddleware
 
     public function index()
     {
-        $query = CostCenter::query();
+        $query = CostCenter::with('mappedEstate');
 
         if (!$this->isHeadOfficeUser()) {
             $query->where(function ($scoped) {
-                $scoped->where('estate', $this->currentEstateCode())
+                $scoped->where('estate_id', $this->currentEstateId())
+                    ->orWhere('estate', $this->currentEstateCode())
                     ->orWhere('join_estate', $this->currentEstateCode());
             });
         }
@@ -43,47 +46,41 @@ class CostCenterController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'cost_center' => 'required|max:10|unique:cost_centers,cost_center',
             'dept' => 'required|max:30',
-            'estate' => 'required|max:10',
+            'estate_id' => 'nullable|exists:estates,id',
+            'estate' => 'nullable|max:10',
             'join_estate' => 'nullable|max:10',
         ]);
 
-        if (!$this->isHeadOfficeUser()) {
-            $validated['estate'] = $this->currentEstateCode();
-            $validated['join_estate'] = $validated['join_estate'] ?? $this->currentEstateCode();
-        }
-
+        $validated = $this->normalizeEstateMapping($validated, true);
         $validated['created_by'] = auth()->user()->username ?? 'system';
 
         $costCenter = CostCenter::create($validated);
-        return response()->json(['message' => 'Cost Center created successfully', 'data' => $costCenter], 201);
+        return response()->json(['message' => 'Cost Center created successfully', 'data' => $costCenter->load('mappedEstate')], 201);
     }
 
     public function show(CostCenter $costCenter)
     {
         $this->ensureCostCenterAccess($costCenter);
 
-        return response()->json(['data' => $costCenter]);
+        return response()->json(['data' => $costCenter->load('mappedEstate')]);
     }
 
     public function update(Request $request, CostCenter $costCenter)
     {
         $validated = $request->validate([
             'dept' => 'sometimes|required|max:30',
-            'estate' => 'sometimes|required|max:10',
+            'estate_id' => 'nullable|exists:estates,id',
+            'estate' => 'nullable|max:10',
             'join_estate' => 'nullable|max:10',
         ]);
 
         $this->ensureCostCenterAccess($costCenter);
 
-        if (!$this->isHeadOfficeUser()) {
-            $validated['estate'] = $this->currentEstateCode();
-            $validated['join_estate'] = $validated['join_estate'] ?? $costCenter->join_estate;
-        }
-
+        $validated = $this->normalizeEstateMapping($validated, false);
         $validated['update_by'] = auth()->user()->username ?? 'system';
 
         $costCenter->update($validated);
-        return response()->json(['message' => 'Cost Center updated successfully', 'data' => $costCenter]);
+        return response()->json(['message' => 'Cost Center updated successfully', 'data' => $costCenter->load('mappedEstate')]);
     }
 
     public function destroy(CostCenter $costCenter)
@@ -101,8 +98,60 @@ class CostCenterController extends Controller implements HasMiddleware
         }
 
         abort_unless(
-            $costCenter->estate === $this->currentEstateCode() || $costCenter->join_estate === $this->currentEstateCode(),
+            (int) $costCenter->estate_id === $this->currentEstateId()
+            || $costCenter->estate === $this->currentEstateCode()
+            || $costCenter->join_estate === $this->currentEstateCode(),
             404
         );
+    }
+
+    private function normalizeEstateMapping(array $data, bool $creating): array
+    {
+        if (!$this->isHeadOfficeUser()) {
+            $estate = $this->authUser()->estate;
+
+            if (!$estate) {
+                throw ValidationException::withMessages([
+                    'estate_id' => ['Estate user tidak ditemukan.'],
+                ]);
+            }
+
+            $data['estate_id'] = $estate->id;
+            $data['estate'] = $estate->estate_id;
+            $data['join_estate'] = $estate->estate_id;
+
+            return $data;
+        }
+
+        $estate = null;
+        $hasEstateInput = array_key_exists('estate_id', $data)
+            || array_key_exists('estate', $data)
+            || array_key_exists('join_estate', $data);
+
+        if (!empty($data['estate_id'])) {
+            $estate = Estate::find((int) $data['estate_id']);
+        } else {
+            $estateCode = trim((string) ($data['join_estate'] ?? $data['estate'] ?? ''));
+
+            if ($estateCode !== '') {
+                $estate = Estate::where('estate_id', $estateCode)->first();
+            }
+        }
+
+        if (!$estate && ($creating || $hasEstateInput)) {
+            throw ValidationException::withMessages([
+                'estate_id' => ['Estate wajib dipilih untuk Cost Center.'],
+            ]);
+        }
+
+        if (!$estate) {
+            return $data;
+        }
+
+        $data['estate_id'] = $estate->id;
+        $data['estate'] = $estate->estate_id;
+        $data['join_estate'] = $estate->estate_id;
+
+        return $data;
     }
 }

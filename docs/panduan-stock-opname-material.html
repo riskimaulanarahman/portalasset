@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Panduan Stock Opname Material</title>
+    <style>
+        @page { margin: 26px 30px; }
+        body {
+            font-family: DejaVu Sans, Arial, sans-serif;
+            font-size: 11px;
+            color: #1f2937;
+            line-height: 1.45;
+        }
+        h1, h2, h3 { margin: 0; color: #111827; }
+        h1 { font-size: 23px; }
+        h2 {
+            font-size: 14px;
+            margin-top: 18px;
+            padding: 7px 9px;
+            background: #ecfdf5;
+            border-left: 4px solid #0f766e;
+        }
+        h3 { font-size: 12px; margin-top: 12px; color: #0f766e; }
+        p { margin: 5px 0; }
+        ol, ul { margin-top: 6px; padding-left: 22px; }
+        li { margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border: 1px solid #d1d5db; padding: 6px 7px; vertical-align: top; }
+        th { background: #f3f4f6; text-align: left; font-weight: bold; }
+        .cover {
+            text-align: center;
+            border-bottom: 2px solid #111827;
+            padding-bottom: 16px;
+            margin-bottom: 14px;
+        }
+        .subtitle { margin-top: 6px; color: #4b5563; font-size: 12px; }
+        .meta {
+            margin-top: 12px;
+            display: inline-block;
+            text-align: left;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            padding: 8px 12px;
+        }
+        .note {
+            border: 1px solid #f59e0b;
+            background: #fffbeb;
+            color: #92400e;
+            padding: 8px 9px;
+            margin: 10px 0;
+        }
+        .success {
+            border: 1px solid #22c55e;
+            background: #f0fdf4;
+            color: #166534;
+            padding: 8px 9px;
+            margin: 10px 0;
+        }
+        .danger {
+            border: 1px solid #ef4444;
+            background: #fef2f2;
+            color: #991b1b;
+            padding: 8px 9px;
+            margin: 10px 0;
+        }
+        .step {
+            border: 1px solid #d1d5db;
+            border-left: 4px solid #0f766e;
+            padding: 8px 10px;
+            margin-top: 9px;
+            page-break-inside: avoid;
+        }
+        .step-title { font-weight: bold; font-size: 12px; color: #0f766e; }
+        .kbd {
+            display: inline-block;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: DejaVu Sans Mono, monospace;
+            font-size: 10px;
+        }
+        .page-break { page-break-before: always; }
+        .footer {
+            position: fixed;
+            bottom: -14px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="footer">Portal Asset - Panduan Stock Opname Material</div>
+
+    <div class="cover">
+        <h1>Panduan Stock Opname Material</h1>
+        <div class="subtitle">Portal Asset - SOP Penggunaan Modul Stock Opname</div>
+        <div class="meta">
+            <p><strong>Versi:</strong> 1.1</p>
+            <p><strong>Tanggal:</strong> 24 Agustus 2026</p>
+            <p><strong>Role bawaan:</strong> Admin, Estate, Manager</p>
+            <p><strong>Menu:</strong> Inventory &gt; Stock Opname</p>
+        </div>
+    </div>
+
+    <div class="note">
+        <strong>Prinsip utama:</strong> hasil hitung fisik tidak langsung mengubah stok material. Stok hanya berubah setelah sesi diajukan, disetujui melalui workflow, dan status menjadi <strong>Posted</strong>.
+    </div>
+
+    <h2>1. Tujuan Modul</h2>
+    <p>Modul Stock Opname Material dipakai untuk membandingkan stok sistem dengan stok fisik di lapangan, mencatat selisih, meminta review/approval, lalu memposting adjustment resmi ke stok material dan transaksi.</p>
+    <ul>
+        <li>Membuat snapshot stok sistem pada tanggal opname.</li>
+        <li>Mengisi hasil hitung fisik manual atau melalui import CSV.</li>
+        <li>Mewajibkan alasan jika ada variance.</li>
+        <li>Menyediakan workflow approval sebelum adjustment diposting.</li>
+        <li>Menyediakan export CSV dan PDF Berita Acara setelah Posted.</li>
+    </ul>
+
+    <h2>2. Role dan Tanggung Jawab</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Tanggung Jawab</th>
+                <th>Permission Kunci</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Admin</strong></td>
+                <td>Monitoring semua estate, membuat sesi untuk estate tertentu, konfigurasi workflow, approval final bila ditunjuk di workflow, dan download laporan.</td>
+                <td>Semua permission Stock Opname.</td>
+            </tr>
+            <tr>
+                <td><strong>Estate</strong></td>
+                <td>Membuat sesi untuk estate sendiri, melakukan counting, import CSV, submit review, cancel sebelum approval, dan export.</td>
+                <td>View, create, edit, count, submit, cancel, export.</td>
+            </tr>
+            <tr>
+                <td><strong>Manager</strong></td>
+                <td>Review variance, meminta recount jika perlu, submit approval, dan melihat/export sesi sesuai akses estate.</td>
+                <td>Estate permission + review.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="success">
+        Jika final approver tidak memakai role Finance, gunakan role <strong>Admin</strong> atau <strong>Manager</strong> pada workflow <strong>Material Stock Opname</strong> sesuai kebijakan internal.
+    </div>
+
+    <h2>3. Alur Status</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Arti</th>
+                <th>Aksi Berikutnya</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>Draft</td><td>Sesi baru dibuat dan snapshot material tersedia.</td><td>Klik Start Counting atau Regenerate Snapshot jika perlu.</td></tr>
+            <tr><td>Counting</td><td>Tim sedang mengisi hasil hitung fisik.</td><td>Isi physical stock, reason variance, lalu Submit Review.</td></tr>
+            <tr><td>Review</td><td>Hasil sudah siap diajukan ke approval.</td><td>Klik Submit Approval.</td></tr>
+            <tr><td>Pending Approval</td><td>Menunggu approval sesuai workflow.</td><td>Approver membuka My Approvals.</td></tr>
+            <tr><td>Posted</td><td>Approval final selesai dan adjustment stok sudah diposting.</td><td>Download CSV atau Berita Acara.</td></tr>
+            <tr><td>Rejected</td><td>Approval ditolak.</td><td>Stok tidak berubah. Buat sesi baru bila perlu.</td></tr>
+            <tr><td>Cancelled</td><td>Sesi dibatalkan sebelum selesai.</td><td>Stok tidak berubah.</td></tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <h2>4. Persiapan Sebelum Opname</h2>
+    <ul>
+        <li>Pastikan user sudah aktif dan memiliki role yang benar.</li>
+        <li>Pastikan user memiliki estate, kecuali Admin yang boleh mengelola lintas estate.</li>
+        <li>Pastikan master material sudah lengkap: kode, nama, unit, section, harga, dan stock awal.</li>
+        <li>Pastikan workflow <strong>Material Stock Opname</strong> aktif dan memiliki approver.</li>
+        <li>Pastikan tidak ada sesi aktif lain untuk estate dan section yang sama.</li>
+    </ul>
+
+    <h2>5. Langkah Penggunaan</h2>
+
+    <div class="step">
+        <div class="step-title">Step 1 - Login</div>
+        <ol>
+            <li>Buka Portal Asset melalui browser.</li>
+            <li>Masukkan username dan password.</li>
+            <li>Jika login berhasil, sistem masuk ke Dashboard.</li>
+            <li>Jika user diarahkan kembali ke Dashboard saat membuka menu lain, cek status aktivasi, estate, dan permission role.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 2 - Masuk ke Menu Stock Opname</div>
+        <ol>
+            <li>Buka sidebar kiri.</li>
+            <li>Pilih <strong>Inventory</strong>.</li>
+            <li>Klik <strong>Stock Opname</strong>.</li>
+            <li>Halaman menampilkan daftar sesi, filter estate, filter status, dan pencarian.</li>
+        </ol>
+        <div class="note">
+            Jika menu tidak muncul, cek permission <strong>view-material-stock-opnames</strong> pada role user dan lakukan logout-login setelah permission diperbarui.
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 3 - Buat Sesi Baru</div>
+        <ol>
+            <li>Klik <span class="kbd">New Session</span>.</li>
+            <li>Admin atau user HO memilih <strong>Estate</strong>. User Estate memakai estate miliknya.</li>
+            <li>Pilih <strong>Opname Date</strong>.</li>
+            <li>Pilih <strong>Section</strong> jika opname hanya untuk section tertentu. Kosongkan untuk semua section.</li>
+            <li>Isi <strong>Notes</strong> bila perlu.</li>
+            <li>Klik <span class="kbd">Create Snapshot</span>.</li>
+        </ol>
+        <div class="note">
+            Snapshot menyimpan stok sistem saat sesi dibuat. Ini menjadi dasar perbandingan dengan hitung fisik.
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 4 - Mulai Counting</div>
+        <ol>
+            <li>Buka detail sesi dari daftar Stock Opname.</li>
+            <li>Pastikan status masih <strong>Draft</strong>.</li>
+            <li>Klik <span class="kbd">Start Counting</span>.</li>
+            <li>Status berubah menjadi <strong>Counting</strong>.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 5 - Isi Hasil Hitung Manual</div>
+        <ol>
+            <li>Buka tab <strong>Items</strong>.</li>
+            <li>Gunakan <strong>Search Items</strong> untuk mencari kode material, nama material, atau section.</li>
+            <li>Isi kolom <strong>Physical</strong> sesuai hasil hitung fisik.</li>
+            <li>Isi <strong>Recount</strong> jika ada hasil hitung ulang.</li>
+            <li>Jika ada selisih, isi <strong>Reason</strong> dengan alasan yang jelas.</li>
+            <li>Klik <span class="kbd">Save</span> per item, atau klik <span class="kbd">Save Drafts</span> untuk menyimpan beberapa item sekaligus.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 6 - Import CSV</div>
+        <ol>
+            <li>Buka detail sesi dengan status Draft atau Counting.</li>
+            <li>Klik <span class="kbd">Template CSV</span>.</li>
+            <li>Isi file CSV sesuai template. Jangan mengubah kode material.</li>
+            <li>Klik <span class="kbd">Import CSV</span> dan pilih file yang sudah diisi.</li>
+            <li>Periksa kembali item yang terimport sebelum submit review.</li>
+        </ol>
+    </div>
+
+    <div class="page-break"></div>
+
+    <div class="step">
+        <div class="step-title">Step 7 - Review Variance</div>
+        <ol>
+            <li>Buka tab <strong>Variance</strong>.</li>
+            <li>Periksa item dengan status <strong>Surplus</strong> atau <strong>Shortage</strong>.</li>
+            <li>Pastikan semua item variance memiliki alasan.</li>
+            <li>Jika perlu hitung ulang, gunakan aksi <strong>Request Recount</strong> pada item terkait.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 8 - Submit Review</div>
+        <ol>
+            <li>Pastikan seluruh item yang perlu dihitung sudah memiliki physical stock.</li>
+            <li>Pastikan semua variance sudah diberi reason.</li>
+            <li>Klik <span class="kbd">Submit Review</span>.</li>
+            <li>Status sesi berubah menjadi <strong>Review</strong>.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 9 - Submit Approval</div>
+        <ol>
+            <li>Setelah status <strong>Review</strong>, klik <span class="kbd">Submit Approval</span>.</li>
+            <li>Sistem membuat approval request berdasarkan workflow <strong>Material Stock Opname</strong>.</li>
+            <li>Status sesi berubah menjadi <strong>Pending Approval</strong>.</li>
+            <li>Buka tab <strong>Approval</strong> untuk melihat workflow, requester, status, dan log approval.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 10 - Approval</div>
+        <ol>
+            <li>Approver login ke Portal Asset.</li>
+            <li>Buka menu <strong>My Approvals</strong>.</li>
+            <li>Pilih approval dengan module <strong>Material Stock Opname</strong>.</li>
+            <li>Periksa detail item dan variance.</li>
+            <li>Klik <span class="kbd">Approve</span> jika sesuai, atau <span class="kbd">Reject</span> jika perlu ditolak.</li>
+        </ol>
+        <div class="danger">
+            Final approver tidak boleh menjadi pembuat, submitter, counter, atau reviewer item pada sesi yang sama jika aturan segregation of duties aktif.
+        </div>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 11 - Posting Adjustment</div>
+        <ol>
+            <li>Jika approval final disetujui, sistem memposting adjustment stok secara otomatis.</li>
+            <li>Item surplus menghasilkan adjustment masuk.</li>
+            <li>Item shortage menghasilkan adjustment keluar.</li>
+            <li>Status sesi menjadi <strong>Posted</strong>.</li>
+            <li>Stok material dan riwayat transaksi sudah terupdate.</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <div class="step-title">Step 12 - Export dan Berita Acara</div>
+        <ol>
+            <li>Buka detail sesi.</li>
+            <li>Klik <span class="kbd">Export CSV</span> untuk laporan data opname.</li>
+            <li>Jika status sudah <strong>Posted</strong>, klik <span class="kbd">Berita Acara</span> untuk mengunduh PDF resmi.</li>
+            <li>Simpan file untuk arsip estate dan audit internal.</li>
+        </ol>
+    </div>
+
+    <h2>6. Ringkasan Tombol</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tombol</th>
+                <th>Fungsi</th>
+                <th>Kapan Digunakan</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>New Session</td><td>Membuat sesi opname dan snapshot.</td><td>Awal opname.</td></tr>
+            <tr><td>Create Snapshot</td><td>Menyimpan sesi baru dan mengambil stok sistem.</td><td>Form sesi baru.</td></tr>
+            <tr><td>Start Counting</td><td>Mengubah Draft menjadi Counting.</td><td>Saat tim mulai hitung fisik.</td></tr>
+            <tr><td>Regenerate Snapshot</td><td>Mengambil ulang snapshot.</td><td>Hanya sebelum sesi berjalan dan belum ada input penting.</td></tr>
+            <tr><td>Template CSV</td><td>Mengunduh format import.</td><td>Sebelum input massal.</td></tr>
+            <tr><td>Import CSV</td><td>Mengupload hasil hitung dari file.</td><td>Jika data counting diisi massal.</td></tr>
+            <tr><td>Save</td><td>Menyimpan satu item.</td><td>Input manual per item.</td></tr>
+            <tr><td>Save Drafts</td><td>Menyimpan beberapa item sekaligus.</td><td>Input manual banyak item.</td></tr>
+            <tr><td>Submit Review</td><td>Mengunci counting untuk tahap review.</td><td>Setelah item dan reason lengkap.</td></tr>
+            <tr><td>Submit Approval</td><td>Mengirim sesi ke workflow approval.</td><td>Setelah status Review.</td></tr>
+            <tr><td>Export CSV</td><td>Mengunduh data opname.</td><td>Kapan saja jika punya permission export.</td></tr>
+            <tr><td>Berita Acara</td><td>Mengunduh PDF resmi.</td><td>Setelah status Posted.</td></tr>
+            <tr><td>Cancel</td><td>Membatalkan sesi.</td><td>Sebelum posted.</td></tr>
+        </tbody>
+    </table>
+
+    <div class="page-break"></div>
+
+    <h2>7. Checklist Sebelum Submit Review</h2>
+    <ul>
+        <li>Semua item yang dihitung sudah memiliki physical stock.</li>
+        <li>Item dengan selisih sudah memiliki reason.</li>
+        <li>Item yang perlu recount sudah dihitung ulang atau diberi catatan.</li>
+        <li>Total variance sudah diperiksa oleh PIC estate/manager.</li>
+        <li>Tidak ada file CSV yang salah kode material atau salah estate.</li>
+    </ul>
+
+    <h2>8. Checklist Sebelum Approval</h2>
+    <ul>
+        <li>Workflow <strong>Material Stock Opname</strong> aktif.</li>
+        <li>Approver aktif dan memiliki role sesuai workflow.</li>
+        <li>Approver bukan user yang sama dengan pembuat, submitter, counter, atau reviewer sesi jika aturan pemisahan tugas aktif.</li>
+        <li>Variance shortage/surplus sudah masuk akal dan memiliki alasan.</li>
+        <li>Jika nilai variance besar, lampirkan catatan internal sesuai SOP perusahaan.</li>
+    </ul>
+
+    <h2>9. Troubleshooting</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Masalah</th>
+                <th>Kemungkinan Penyebab</th>
+                <th>Solusi</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Menu Stock Opname tidak muncul</td>
+                <td>User belum punya permission view-material-stock-opnames, belum aktif, atau belum memiliki estate.</td>
+                <td>Admin cek role/permission, jalankan migration permission jika belum, lalu user logout-login.</td>
+            </tr>
+            <tr>
+                <td>Akses URL kembali ke Dashboard</td>
+                <td>Permission route tidak terpenuhi atau user belum setup akses operasional.</td>
+                <td>Cek role, estate, not_active, dan permissions pada user.</td>
+            </tr>
+            <tr>
+                <td>New Session gagal</td>
+                <td>Masih ada sesi aktif untuk estate/section yang sama.</td>
+                <td>Selesaikan, cancel, atau posted sesi aktif sebelumnya.</td>
+            </tr>
+            <tr>
+                <td>Submit Review gagal</td>
+                <td>Masih ada variance tanpa reason atau item belum lengkap.</td>
+                <td>Lengkapi physical stock dan reason pada item variance.</td>
+            </tr>
+            <tr>
+                <td>Submit Approval gagal</td>
+                <td>Workflow belum aktif atau approver tidak ditemukan.</td>
+                <td>Admin cek menu Approval Workflows untuk module Material Stock Opname.</td>
+            </tr>
+            <tr>
+                <td>Approval final ditolak</td>
+                <td>Approver memilih reject atau aturan segregation of duties dilanggar.</td>
+                <td>Review ulang sesi, perbaiki proses, lalu buat sesi baru jika diperlukan.</td>
+            </tr>
+            <tr>
+                <td>Berita Acara tidak muncul</td>
+                <td>Status belum Posted atau user tidak punya permission export.</td>
+                <td>Tunggu approval final posted atau minta admin cek permission export-material-stock-opnames.</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>10. Catatan Audit</h2>
+    <ul>
+        <li>Semua perubahan item dan aksi sesi tercatat di tab <strong>Log</strong>.</li>
+        <li>Semua aksi approval tercatat di tab <strong>Approval</strong>.</li>
+        <li>Adjustment stok dibuat satu kali saat final approval berhasil.</li>
+        <li>Sesi Rejected atau Cancelled tidak mengubah stok material.</li>
+        <li>Gunakan PDF Berita Acara dari sesi Posted sebagai arsip resmi.</li>
+    </ul>
+
+    <div class="success">
+        Dokumen ini disiapkan untuk pelatihan user dan operasional harian. Untuk perubahan workflow atau permission, gunakan menu Administration sesuai akses admin.
+    </div>
+</body>
+</html>

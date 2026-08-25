@@ -11,7 +11,9 @@ import {
   getInitials,
   exportToCSV,
   isHeadOfficeUser,
+  isStoredAdmin,
   getStoredUser,
+  parseBoolean,
 } from '../lib/utils'
 
 // ── formatRupiah ──────────────────────────────────────────────────────────────
@@ -92,6 +94,22 @@ describe('exportToCSV', () => {
   })
 })
 
+describe('parseBoolean', () => {
+  it('treats database false values as false', () => {
+    expect(parseBoolean(false)).toBe(false)
+    expect(parseBoolean(0)).toBe(false)
+    expect(parseBoolean('0')).toBe(false)
+    expect(parseBoolean('false')).toBe(false)
+  })
+
+  it('treats database true values as true', () => {
+    expect(parseBoolean(true)).toBe(true)
+    expect(parseBoolean(1)).toBe(true)
+    expect(parseBoolean('1')).toBe(true)
+    expect(parseBoolean('true')).toBe(true)
+  })
+})
+
 // ── isHeadOfficeUser ──────────────────────────────────────────────────────────
 describe('isHeadOfficeUser', () => {
   beforeEach(() => {
@@ -120,6 +138,26 @@ describe('isHeadOfficeUser', () => {
 })
 
 // ── getStoredUser ─────────────────────────────────────────────────────────────
+describe('isStoredAdmin', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('returns true for admin role', () => {
+    localStorage.setItem('user', JSON.stringify({ role: { name: 'admin' } }))
+    expect(isStoredAdmin()).toBe(true)
+  })
+
+  it.each(['estate', 'manager', 'finance', 'guest'])('returns false for %s role', (role) => {
+    localStorage.setItem('user', JSON.stringify({ role: { name: role } }))
+    expect(isStoredAdmin()).toBe(false)
+  })
+
+  it('returns false when no user is stored', () => {
+    expect(isStoredAdmin()).toBe(false)
+  })
+})
+
 describe('getStoredUser', () => {
   it('returns empty object for missing user', () => {
     localStorage.clear()

@@ -10,8 +10,7 @@ import {
   History, 
   ArrowLeftRight, 
   Users, 
-  Wallet, 
-  Monitor,
+  Wallet,
   CheckCircle2,
   Code,
   Factory,
@@ -181,20 +180,6 @@ const steps = [
           condition: "Good", 
           current_location: "Estate Tanjung", 
           remarks: "In regular use by IT Dept" 
-        }
-      },
-      { 
-        icon: <Monitor className="h-4 w-4" />, 
-        label: 'Software', 
-        desc: 'Inventaris lisensi perangkat lunak. Pantau masa berlaku lisensi untuk menghindari kendala operasional akibat kadaluarsa.', 
-        example: 'Microsoft 365 (Exp: 31 Dec 2024), ArcGIS Pro',
-        payload: { 
-          name: "Microsoft 365 Business Premium", 
-          vendor: "Microsoft", 
-          license_key: "XXXXX-XXXXX-XXXXX-XXXXX", 
-          expiry_date: "2024-12-31", 
-          seats: 50, 
-          assigned_count: 45 
         }
       }
     ]

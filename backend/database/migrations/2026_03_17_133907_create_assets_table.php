@@ -21,7 +21,7 @@ return new class extends Migration
             $table->string('type', 25);
             $table->string('manufacture', 50);
             $table->string('series', 25);
-            $table->foreignId('section_id')->constrained('sections')->restrictOnDelete();
+            $table->foreignId('section_id')->constrained('sections')->noActionOnDelete();
             $table->string('alokasi', 10)->nullable();
             $table->text('keterangan')->nullable();
             $table->text('vendor')->nullable();

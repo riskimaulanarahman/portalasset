@@ -15,6 +15,7 @@ import { formatDate, getStoredUser, isHeadOfficeUser, exportToCSV } from '../lib
 import { hasStoredPermission } from '../lib/access';
 
 interface Condition {
+  [key: string]: unknown;
   id:          number;
   reg_id:      string;
   kondisi:     string;
@@ -171,7 +172,7 @@ const AssetConditionsPage: React.FC = () => {
       render: (val) => <span className="text-xs text-gray-500">{String(val ?? '')}</span>,
     },
     ...(isHoUser ? [{
-      key: 'asset' as keyof Condition,
+      key: 'asset',
       label: 'Estate',
       render: (val: any) => <span className="text-xs text-gray-600">{val?.estate?.estate || '-'}</span>,
     }] : []),

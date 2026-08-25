@@ -32,7 +32,7 @@ class AssetRegController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'asset_type_id' => 'required|exists:asset_types,id',
             'manufacturer_id' => 'required|exists:manufacturers,id',
-            'series' => 'nullable|max:50',
+            'series' => 'nullable|max:25',
             'matcode' => 'nullable|max:25',
             'description' => 'nullable',
             'section_id' => 'required|exists:sections,id',
@@ -55,7 +55,7 @@ class AssetRegController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'asset_type_id' => 'sometimes|required|exists:asset_types,id',
             'manufacturer_id' => 'sometimes|required|exists:manufacturers,id',
-            'series' => 'nullable|max:50',
+            'series' => 'nullable|max:25',
             'matcode' => 'nullable|max:25',
             'description' => 'nullable',
             'section_id' => 'sometimes|required|exists:sections,id',

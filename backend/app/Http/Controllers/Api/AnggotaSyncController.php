@@ -6,59 +6,132 @@ use App\Http\Controllers\Controller;
 use App\Models\Anggota;
 use App\Models\TblEmployee;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AnggotaSyncController extends Controller
 {
+    private const BATCH_SIZE = 100;
+
     public function sync(Request $request)
     {
+        @set_time_limit(300);
+
         $actor = $request->user();
 
         if (!$actor->hasRole('admin') && !$actor->hasPermissionTo('create-anggotas')) {
             abort(403, 'Hanya admin yang dapat melakukan sync data karyawan.');
         }
 
-        $employees = TblEmployee::whereNotNull('SAPID')
-            ->where('SAPID', '!=', '')
-            ->get();
-
         $synced  = 0;
         $skipped = 0;
 
-        DB::transaction(function () use ($employees, &$synced, &$skipped, $actor) {
-            foreach ($employees as $emp) {
-                $sapId = trim($emp->SAPID);
-                if ($sapId === '') {
-                    $skipped++;
-                    continue;
-                }
+        $startedAt = microtime(true);
 
-                $notActive = ($emp->isTerminate === '1') || ($emp->isActive !== '1');
+        try {
+            TblEmployee::with('department')
+                ->select([
+                    'id',
+                    'SAPID',
+                    'LoginName',
+                    'FullName',
+                    'superiorName',
+                    'companycode',
+                    'CostCenter',
+                    'department_id',
+                    'contract_status',
+                    'JoinDate',
+                    'Gender',
+                    'isTerminate',
+                    'isActive',
+                ])
+                ->whereNotNull('SAPID')
+                ->where('SAPID', '!=', '')
+                ->chunkById(self::BATCH_SIZE, function ($employees) use (&$synced, &$skipped, $actor) {
+                    $rows = [];
 
-                Anggota::updateOrCreate(
-                    ['sap_id' => $sapId],
-                    [
-                        'login_name'      => $emp->LoginName ? mb_substr(trim($emp->LoginName), 0, 50) : null,
-                        'nama'            => $emp->FullName ? mb_substr($emp->FullName, 0, 100) : null,
-                        'supervisor'      => $emp->superiorName ? mb_substr($emp->superiorName, 0, 100) : null,
-                        'company_code'    => $emp->companycode ? mb_substr(trim($emp->companycode), 0, 10) : null,
-                        'cost_center'     => $emp->CostCenter ? mb_substr(trim($emp->CostCenter), 0, 100) : null,
-                        'contract_status' => $emp->contract_status ? mb_substr(trim($emp->contract_status), 0, 15) : null,
-                        'join_date'       => $emp->JoinDate,
-                        'gender'          => $emp->Gender ? mb_substr(trim($emp->Gender), 0, 10) : null,
-                        'not_active'      => $notActive,
-                        'update_by'       => $actor->username ?? 'system_sync',
-                    ]
-                );
+                    foreach ($employees as $emp) {
+                        $sapId = trim((string) $emp->SAPID);
 
-                $synced++;
-            }
-        });
+                        if ($sapId === '') {
+                            $skipped++;
+                            continue;
+                        }
+
+                        $rows[$sapId] = $this->mapEmployeeToAnggotaRow($emp, $sapId, $actor->username ?? 'system_sync');
+                    }
+
+                    if ($rows === []) {
+                        return;
+                    }
+
+                    Anggota::upsert(
+                        array_values($rows),
+                        ['sap_id'],
+                        [
+                            'login_name',
+                            'nama',
+                            'supervisor',
+                            'company_code',
+                            'cost_center',
+                            'department',
+                            'contract_status',
+                            'join_date',
+                            'gender',
+                            'not_active',
+                            'update_by',
+                        ]
+                    );
+
+                    $synced += count($rows);
+                });
+        } catch (\Throwable $e) {
+            Log::error('Anggota ERP sync failed.', [
+                'user_id' => $actor->id ?? null,
+                'username' => $actor->username ?? null,
+                'synced' => $synced,
+                'skipped' => $skipped,
+                'duration_seconds' => round(microtime(true) - $startedAt, 2),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Sync gagal saat mengambil atau menyimpan data ERP. Cek log Laravel untuk detail.',
+                'synced'  => $synced,
+                'skipped' => $skipped,
+            ], 500);
+        }
 
         return response()->json([
             'message' => "Sync selesai: {$synced} karyawan diperbarui, {$skipped} dilewati.",
             'synced'  => $synced,
             'skipped' => $skipped,
         ]);
+    }
+
+    private function mapEmployeeToAnggotaRow(TblEmployee $emp, string $sapId, string $updatedBy): array
+    {
+        $department = $emp->departmentName();
+
+        return [
+            'sap_id'          => $sapId,
+            'login_name'      => $this->nullableSubstring($emp->LoginName, 50),
+            'nama'            => $this->nullableSubstring($emp->FullName, 100),
+            'supervisor'      => $this->nullableSubstring($emp->superiorName, 100),
+            'company_code'    => $this->nullableSubstring($emp->companycode, 10),
+            'cost_center'     => $this->nullableSubstring($emp->CostCenter, 100),
+            'department'      => $this->nullableSubstring($department, 100),
+            'contract_status' => $this->nullableSubstring($emp->contract_status, 15),
+            'join_date'       => $emp->JoinDate,
+            'gender'          => $this->nullableSubstring($emp->Gender, 10),
+            'not_active'      => ((string) $emp->isTerminate === '1') || ((string) $emp->isActive !== '1'),
+            'update_by'       => $updatedBy,
+        ];
+    }
+
+    private function nullableSubstring($value, int $limit): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : mb_substr($value, 0, $limit);
     }
 }

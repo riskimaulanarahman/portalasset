@@ -19,12 +19,31 @@ class WorkflowSeeder extends Seeder
 
         \App\Models\ApprovalStep::updateOrCreate(
             ['workflow_id' => $workflow->id, 'sequence' => 1],
-            ['role_name' => 'Manager', 'action_type' => 'Approver']
+            ['role_name' => 'manager', 'action_type' => 'Approver']
         );
 
         \App\Models\ApprovalStep::updateOrCreate(
             ['workflow_id' => $workflow->id, 'sequence' => 2],
-            ['role_name' => 'Finance', 'action_type' => 'Approver']
+            ['role_name' => 'finance', 'action_type' => 'Approver']
+        );
+
+        $stockOpnameWorkflow = \App\Models\ApprovalWorkflow::updateOrCreate(
+            ['module_name' => 'Material Stock Opname'],
+            [
+                'name' => 'Standard Material Stock Opname Workflow',
+                'description' => 'Review dan approval final adjustment stock opname material.',
+                'is_active' => true,
+            ]
+        );
+
+        \App\Models\ApprovalStep::updateOrCreate(
+            ['workflow_id' => $stockOpnameWorkflow->id, 'sequence' => 1],
+            ['role_name' => 'manager', 'action_type' => 'Reviewer']
+        );
+
+        \App\Models\ApprovalStep::updateOrCreate(
+            ['workflow_id' => $stockOpnameWorkflow->id, 'sequence' => 2],
+            ['role_name' => 'finance', 'action_type' => 'Approver']
         );
     }
 }

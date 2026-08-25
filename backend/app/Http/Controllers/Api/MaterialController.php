@@ -180,6 +180,10 @@ class MaterialController extends Controller implements HasMiddleware
 
         $this->ensureEstateAccess($material->estate_id);
 
+        if (array_key_exists('stock', $validated) && (float) $validated['stock'] !== (float) $material->stock) {
+            abort_unless(Auth::user()?->hasRole('admin'), 403, 'Stock material tidak boleh diubah langsung. Gunakan transaksi material atau stock opname.');
+        }
+
         if (!$this->isHeadOfficeUser()) {
             $validated['estate_id'] = $this->currentEstateId();
         }

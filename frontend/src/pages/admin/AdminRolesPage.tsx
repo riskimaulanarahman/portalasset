@@ -74,8 +74,8 @@ const AdminRolesPage: React.FC = () => {
   };
 
   const handleDelete = async (role: any) => {
-    if (role.name === 'admin') {
-       toastError('Protected', 'The admin role cannot be deleted.');
+    if (['admin', 'estate', 'manager', 'guest'].includes(role.name)) {
+       toastError('Protected', 'Built-in system roles cannot be deleted.');
        return;
     }
     const result = await showConfirm(

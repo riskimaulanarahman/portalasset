@@ -10,6 +10,8 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class RoleController extends Controller implements HasMiddleware
 {
+    private const PROTECTED_ROLES = ['admin', 'estate', 'manager', 'guest'];
+
     public static function middleware(): array
     {
         return [
@@ -55,9 +57,8 @@ class RoleController extends Controller implements HasMiddleware
      */
     public function update(Request $request, Role $role)
     {
-        // Prevent editing built-in admin role name if you want to be safe
-        if ($role->name === 'admin') {
-            return response()->json(['message' => 'Cannot modify the system admin role'], 403);
+        if (in_array($role->name, self::PROTECTED_ROLES, true)) {
+            return response()->json(['message' => 'Cannot modify built-in system roles'], 403);
         }
 
         $validated = $request->validate([
@@ -77,8 +78,8 @@ class RoleController extends Controller implements HasMiddleware
      */
     public function destroy(Role $role)
     {
-        if ($role->name === 'admin') {
-            return response()->json(['message' => 'Cannot delete the system admin role'], 403);
+        if (in_array($role->name, self::PROTECTED_ROLES, true)) {
+            return response()->json(['message' => 'Cannot delete built-in system roles'], 403);
         }
 
         $role->delete();

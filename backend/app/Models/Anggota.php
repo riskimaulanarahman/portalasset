@@ -27,6 +27,7 @@ class Anggota extends Model
         'estate_id',
         'company_code',
         'cost_center',
+        'department',
         'contract_status',
         'join_date',
         'gender',
@@ -34,6 +35,13 @@ class Anggota extends Model
         'create_by',
         'update_by',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'not_active' => 'boolean',
+        ];
+    }
 
     public function section()
     {

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Concerns\InteractsWithEstateScope;
+use App\Http\Controllers\Concerns\InteractsWithAssetOwnershipScope;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\TransCondition;
@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Auth;
 
 class TransConditionController extends Controller implements HasMiddleware
 {
-    use InteractsWithEstateScope;
+    use InteractsWithAssetOwnershipScope;
 
     public static function middleware(): array
     {
@@ -31,15 +31,12 @@ class TransConditionController extends Controller implements HasMiddleware
 
         if ($request->filled('reg_id')) {
             $query->where('reg_id', $request->reg_id);
-        } else {
-            // Estate scoping — join via asset
-            if (!$this->isHeadOfficeUser()) {
-                $estateId = $this->currentEstateId();
-                $query->whereHas('asset', fn($q) => $q->where('estate_id', $estateId));
-            } elseif ($request->filled('estate_id')) {
-                $query->whereHas('asset', fn($q) => $q->where('estate_id', $request->estate_id));
-            }
         }
+            // Estate scoping — join via asset
+            $query->whereHas('asset', fn($q) => $this->applyAssetVisibilityScope(
+                $q,
+                $request->filled('estate_id') ? $request->integer('estate_id') : null
+            ));
 
         if ($request->filled('kondisi')) {
             $query->where('kondisi', $request->kondisi);
@@ -63,11 +60,8 @@ class TransConditionController extends Controller implements HasMiddleware
             'remarks' => 'nullable|string',
         ]);
 
-        // Non-HO users may only record condition for their own estate assets
-        if (!$this->isHeadOfficeUser()) {
-            $asset = Asset::findOrFail($validated['reg_id']);
-            abort_unless((int) $asset->estate_id === $this->currentEstateId(), 403, 'Akses ditolak untuk aset estate lain.');
-        }
+        $asset = Asset::findOrFail($validated['reg_id']);
+        $this->ensureAssetVisibility($asset);
 
         $username = Auth::user()->username ?? Auth::user()->name ?? 'system';
 
@@ -87,9 +81,7 @@ class TransConditionController extends Controller implements HasMiddleware
             'remarks' => 'nullable|string',
         ]);
 
-        if (!$this->isHeadOfficeUser()) {
-            abort_unless((int) $assetCondition->asset->estate_id === $this->currentEstateId(), 403);
-        }
+        $this->ensureAssetVisibility($assetCondition->asset);
 
         $validated['update_by']   = Auth::user()->username ?? Auth::user()->name ?? 'system';
         $validated['update_date'] = now();
@@ -101,9 +93,7 @@ class TransConditionController extends Controller implements HasMiddleware
 
     public function destroy(TransCondition $assetCondition)
     {
-        if (!$this->isHeadOfficeUser()) {
-            abort_unless((int) $assetCondition->asset->estate_id === $this->currentEstateId(), 403);
-        }
+        $this->ensureAssetVisibility($assetCondition->asset);
 
         $assetCondition->delete();
 

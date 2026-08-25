@@ -36,7 +36,7 @@ class ApprovalStep extends Model
 
         if ($this->role_name) {
             $query = User::whereHas('role', fn($q) => $q->where('name', $this->role_name))->where('not_active', false);
-            if ($estateId) {
+            if ($estateId && mb_strtolower($this->role_name) !== 'admin') {
                 $query->where('estate_id', $estateId);
             }
             return $query->pluck('email')->filter()->values()->toArray();
