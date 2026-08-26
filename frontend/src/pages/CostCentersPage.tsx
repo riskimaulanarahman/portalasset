@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Wallet, Edit, Trash2 } from 'lucide-react';
+import type { AxiosError } from 'axios';
 import api from '../api/axios';
 import DataTable, { Column } from '../components/DataTable';
 import Modal from '../components/Modal';
@@ -12,12 +13,33 @@ import { hasStoredPermission } from '../lib/access';
 
 
 interface CostCenter {
-  [key: string]: any;
+  [key: string]: unknown;
   id:          number;
   cost_center: string;
   dept:        string;
   estate:      string;
   join_estate: string;
+  estate_id?:  number | null;
+  mapped_estate?: Estate | null;
+}
+
+interface Estate {
+  id: number;
+  estate_id: string;
+  estate: string;
+}
+
+interface CostCenterPayload {
+  cost_center: string;
+  dept: string;
+  estate_id: number;
+}
+
+type CostCenterUpdatePayload = CostCenterPayload & { id: number };
+
+interface ApiErrorData {
+  message?: string;
+  errors?: Record<string, string[]>;
 }
 
 const CostCentersPage: React.FC = () => {
@@ -39,24 +61,32 @@ const CostCentersPage: React.FC = () => {
     },
   });
 
+  const { data: estates = [] } = useQuery<Estate[]>({
+    queryKey: ['estates'],
+    queryFn: async () => {
+      const resp = await api.get('/estates');
+      return resp.data.data;
+    },
+  });
+
   const createMutation = useMutation({
-    mutationFn: (newData: unknown) => api.post('/cost-centers', newData),
+    mutationFn: (newData: CostCenterPayload) => api.post('/cost-centers', newData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cost-centers'] });
       handleCloseModal();
       toast.success('Cost center created successfully');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to create cost center'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err) || 'Failed to create cost center'),
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.put(`/cost-centers/${data.id}`, data),
+    mutationFn: (data: CostCenterUpdatePayload) => api.put(`/cost-centers/${data.id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cost-centers'] });
       handleCloseModal();
       toast.success('Cost center updated successfully');
     },
-    onError: (err: any) => toast.error(err.response?.data?.message || 'Failed to update cost center'),
+    onError: (err: unknown) => toast.error(getErrorMessage(err) || 'Failed to update cost center'),
   });
 
   const handleOpenAdd = () => { setSelectedItem(null); setIsModalOpen(true); };
@@ -67,7 +97,7 @@ const CostCentersPage: React.FC = () => {
     
   const handleCloseModal = () => { setIsModalOpen(false); setSelectedItem(null); };
 
-  const handleSubmit = (formData: any) => {
+  const handleSubmit = (formData: CostCenterPayload) => {
     if (selectedItem) updateMutation.mutate({ ...formData, id: selectedItem.id });
     else createMutation.mutate(formData);
   };
@@ -79,8 +109,8 @@ const CostCentersPage: React.FC = () => {
       await api.delete(`/cost-centers/${id}`);
       toast.success('Deleted', 'Cost center removed successfully');
       refetch();
-    } catch (err: any) {
-      toast.error('Error', err.response?.data?.message || 'Failed to delete');
+    } catch (err: unknown) {
+      toast.error('Error', getErrorMessage(err) || 'Failed to delete');
     }
   };
     
@@ -92,7 +122,7 @@ const CostCentersPage: React.FC = () => {
     {
       key: 'actions',
       label: '',
-      render: (_: any, row: CostCenter) => (
+      render: (_value: unknown, row: CostCenter) => (
         <div className="flex justify-end gap-2">
           {canEditCostCenter && (
             <button
@@ -152,10 +182,23 @@ const CostCentersPage: React.FC = () => {
       />
 
       <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={selectedItem ? 'Edit Cost Center' : 'Add New Cost Center'}>
-        <CostCenterForm initialData={selectedItem} onSubmit={handleSubmit} onCancel={handleCloseModal} />
+        <CostCenterForm initialData={selectedItem} estates={estates} onSubmit={handleSubmit} onCancel={handleCloseModal} />
       </Modal>
     </div>
   );
 };
+
+function getErrorMessage(err: unknown): string | undefined {
+  const responseData = (err as AxiosError<ApiErrorData>).response?.data;
+  const errors = responseData?.errors;
+
+  if (errors) {
+    const firstKey = Object.keys(errors)[0];
+    const firstError = firstKey ? errors[firstKey]?.[0] : null;
+    if (firstError) return firstError;
+  }
+
+  return responseData?.message;
+}
 
 export default CostCentersPage;

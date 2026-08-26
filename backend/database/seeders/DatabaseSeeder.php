@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             ManufacturerSeeder::class,
             AssetSeeder::class,
             WorkflowSeeder::class,
+            StockOpnameSettingSeeder::class,
             SoftwareSeeder::class,
             CostCenterSeeder::class,
             UserSeeder::class,

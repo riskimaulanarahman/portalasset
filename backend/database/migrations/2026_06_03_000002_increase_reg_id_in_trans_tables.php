@@ -14,19 +14,19 @@ return new class extends Migration
         Schema::table('trans_conditions', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 20)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
 
         Schema::table('trans_maintenances', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 20)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
 
         Schema::table('trans_assets', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 20)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
     }
 
@@ -35,19 +35,19 @@ return new class extends Migration
         Schema::table('trans_conditions', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 10)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
 
         Schema::table('trans_maintenances', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 10)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
 
         Schema::table('trans_assets', function (Blueprint $table) {
             $table->dropForeign(['reg_id']);
             $table->string('reg_id', 10)->change();
-            $table->foreign('reg_id')->references('reg_id')->on('assets')->restrictOnDelete();
+            $table->foreign('reg_id')->references('reg_id')->on('assets')->noActionOnDelete();
         });
     }
 };

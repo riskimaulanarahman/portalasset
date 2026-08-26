@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use LdapRecord\Laravel\Auth\LdapAuthenticatable;
@@ -31,6 +32,7 @@ class User extends Authenticatable implements LdapAuthenticatable
         'estate_id',
         'role_id',
         'not_active',
+        'access_setup_required',
         'last_access',
         'guid',
         'domain',
@@ -44,6 +46,16 @@ class User extends Authenticatable implements LdapAuthenticatable
     public function role()
     {
         return $this->belongsTo(\Spatie\Permission\Models\Role::class, 'role_id');
+    }
+
+    public function assetDepartments(): BelongsToMany
+    {
+        return $this->belongsToMany(AssetDepartment::class)->withTimestamps();
+    }
+
+    public function assetDivisions(): BelongsToMany
+    {
+        return $this->belongsToMany(AssetDivision::class)->withTimestamps();
     }
 
     /**
@@ -67,6 +79,7 @@ class User extends Authenticatable implements LdapAuthenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'not_active' => 'boolean',
+            'access_setup_required' => 'boolean',
             'last_access' => 'date',
         ];
     }

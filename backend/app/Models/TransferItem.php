@@ -23,4 +23,9 @@ class TransferItem extends Model
     {
         return $this->hasMany(MaterialTransferHistory::class, 'transfer_item_id');
     }
+
+    public function assetHistories()
+    {
+        return $this->hasMany(AssetTransferHistory::class, 'transfer_item_id');
+    }
 }

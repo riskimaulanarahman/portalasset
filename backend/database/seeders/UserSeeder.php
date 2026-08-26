@@ -15,8 +15,8 @@ class UserSeeder extends Seeder
         $roles = [
             'admin' => Role::findOrCreate('admin', 'web'),
             'estate' => Role::findOrCreate('estate', 'web'),
-            'Manager' => Role::findOrCreate('Manager', 'web'),
-            'Finance' => Role::findOrCreate('Finance', 'web'),
+            'manager' => Role::findOrCreate('manager', 'web'),
+            'finance' => Role::findOrCreate('finance', 'web'),
         ];
 
         $estates = Estate::query()->get()->keyBy('estate_id');
@@ -57,7 +57,7 @@ class UserSeeder extends Seeder
                     'password' => 'user123',
                     'estate_id' => $estate->id,
                 ],
-                $roles['Manager']
+                $roles['manager']
             );
 
             $this->upsertUser(
@@ -68,7 +68,7 @@ class UserSeeder extends Seeder
                     'password' => 'user123',
                     'estate_id' => $estate->id,
                 ],
-                $roles['Finance']
+                $roles['finance']
             );
         }
     }
@@ -84,6 +84,8 @@ class UserSeeder extends Seeder
                 'estate_id' => $data['estate_id'],
                 'role_id' => $role->id,
                 'not_active' => false,
+                'guid' => 'seed-'.$data['username'],
+                'domain' => 'seed',
             ]
         );
 

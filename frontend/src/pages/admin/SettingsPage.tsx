@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, Save, Bell, Globe, Layout, ShieldCheck } from 'lucide-react';
+import { Settings, Save, Bell, Globe, Layout, ShieldCheck, ClipboardCheck } from 'lucide-react';
 import api from '../../api/axios';
 import { Input, Checkbox, FormGroup } from '../../components/ui/FormFields';
 import { useToast } from '../../components/ui/Toast';
@@ -31,6 +31,9 @@ const SettingsPage: React.FC = () => {
             app_name: { value: 'Portal Asset', group: 'general', type: 'string' },
             app_logo_url: { value: '', group: 'general', type: 'string' },
             enable_email_notif: { value: true, group: 'notifications', type: 'boolean' },
+            stock_opname_qty_tolerance: { value: 0, group: 'stock_opname', type: 'number' },
+            stock_opname_value_tolerance: { value: 0, group: 'stock_opname', type: 'number' },
+            stock_opname_require_reason: { value: true, group: 'stock_opname', type: 'boolean' },
             footer_text: { value: '© 2026 PT. Industat Forest', group: 'general', type: 'string' },
         });
     }
@@ -48,9 +51,15 @@ const SettingsPage: React.FC = () => {
   });
 
   const handleChange = (key: string, value: any) => {
+    const defaultMeta: Record<string, { group: string; type: string }> = {
+      stock_opname_qty_tolerance: { group: 'stock_opname', type: 'number' },
+      stock_opname_value_tolerance: { group: 'stock_opname', type: 'number' },
+      stock_opname_require_reason: { group: 'stock_opname', type: 'boolean' },
+    };
+
     setFormState((prev: any) => ({
       ...prev,
-      [key]: { ...prev[key], value }
+      [key]: { ...(defaultMeta[key] ?? {}), ...prev[key], value }
     }));
   };
 
@@ -129,6 +138,40 @@ const SettingsPage: React.FC = () => {
               checked={formState?.enable_email_notif?.value || false}
               onChange={(e) => handleChange('enable_email_notif', e.target.checked)}
             />
+          </div>
+        </section>
+
+        {/* Stock Opname Settings */}
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-50 bg-gray-50/50 flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-forest-400" />
+            <h2 className="text-sm font-bold text-forest-900 uppercase tracking-wider">Stock Opname</h2>
+          </div>
+          <div className="p-6 space-y-4">
+            <Checkbox
+              label="Require Variance Reason"
+              description="Require a reason when stock opname variance exceeds configured tolerance."
+              checked={formState?.stock_opname_require_reason?.value ?? true}
+              onChange={(e) => handleChange('stock_opname_require_reason', e.target.checked)}
+            />
+            <FormGroup cols={2}>
+              <Input
+                label="Qty Tolerance"
+                type="number"
+                step="0.1"
+                min="0"
+                value={formState?.stock_opname_qty_tolerance?.value ?? 0}
+                onChange={(e) => handleChange('stock_opname_qty_tolerance', e.target.value)}
+              />
+              <Input
+                label="Value Tolerance"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formState?.stock_opname_value_tolerance?.value ?? 0}
+                onChange={(e) => handleChange('stock_opname_value_tolerance', e.target.value)}
+              />
+            </FormGroup>
           </div>
         </section>
 

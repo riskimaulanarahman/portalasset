@@ -27,7 +27,7 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
   isSubmitting = false,
 }) => {
   const [name, setName] = useState(initialData?.name || '');
-  const [moduleName, setModuleName] = useState(initialData?.module_name || 'Transfers');
+  const [moduleName, setModuleName] = useState(initialData?.module_name || 'Transfer');
   const [estateId, setEstateId] = useState(initialData?.estate_id || '');
   const [isActive, setIsActive] = useState(initialData ? initialData.is_active : true);
   const [steps, setSteps] = useState<WorkflowStep[]>(
@@ -86,7 +86,8 @@ const WorkflowForm: React.FC<WorkflowFormProps> = ({
           value={moduleName}
           onChange={(e) => setModuleName(e.target.value)}
           options={[
-            { value: 'Transfers', label: 'Transfers' },
+            { value: 'Transfer', label: 'Transfer' },
+            { value: 'write-off', label: 'Write-Off' },
             { value: 'Transactions', label: 'Transactions' },
           ]}
           required

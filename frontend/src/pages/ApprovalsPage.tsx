@@ -73,6 +73,56 @@ interface TransferDetail {
   }[];
 }
 
+interface AccessRequestDetail {
+  id: number;
+  status: string;
+  reason?: string | null;
+  user?: { name: string; username: string; role?: { name: string }; estate?: { estate_id: string; estate: string } };
+  current_role?: { name: string };
+  current_estate?: { estate_id: string; estate: string };
+  requested_role?: { name: string };
+  requested_estate?: { estate_id: string; estate: string };
+  approval_requests?: {
+    id: number;
+    current_sequence: number;
+    status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+    workflow?: { name: string; steps: ApprovalStep[] };
+    logs: ApprovalLog[];
+  }[];
+}
+
+interface StockOpnameDetail {
+  id: number;
+  opname_code: string;
+  status: string;
+  opname_date: string;
+  total_items: number;
+  counted_items: number;
+  total_variance_qty: number;
+  total_variance_value: number;
+  estate?: { estate_id: string; estate: string };
+  section?: { section: string; section_full?: string } | null;
+  items: {
+    id: number;
+    material_code: string;
+    material_name: string;
+    system_stock_snapshot: number;
+    final_physical_stock?: number | null;
+    variance_qty: number;
+    variance_value: number;
+    variance_reason?: string | null;
+    status: string;
+    unit?: { nama?: string } | null;
+  }[];
+  approval_requests?: {
+    id: number;
+    current_sequence: number;
+    status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+    workflow?: { name: string; steps: ApprovalStep[] };
+    logs: ApprovalLog[];
+  }[];
+}
+
 const ACTION_TYPE_LABEL: Record<string, string> = {
   Approver: 'Approver',
   Reviewer: 'Reviewer',
@@ -180,6 +230,26 @@ const ApprovalsPage: React.FC = () => {
   });
   const transferDetail = transferDetailData?.data ?? null;
 
+  const { data: accessDetailData, isLoading: isAccessDetailLoading } = useQuery<{ data: AccessRequestDetail }>({
+    queryKey: ['approval-access-detail', selectedRequest?.reference_id],
+    enabled: selectedRequest !== null && selectedRequest.reference_table === 'access_requests',
+    queryFn: async () => {
+      const res = await api.get(`/access-requests/${selectedRequest!.reference_id}`);
+      return res.data;
+    },
+  });
+  const accessDetail = accessDetailData?.data ?? null;
+
+  const { data: stockOpnameDetailData, isLoading: isStockOpnameDetailLoading } = useQuery<{ data: StockOpnameDetail }>({
+    queryKey: ['approval-stock-opname-detail', selectedRequest?.reference_id],
+    enabled: selectedRequest !== null && selectedRequest.reference_table === 'material_stock_opnames',
+    queryFn: async () => {
+      const res = await api.get(`/material-stock-opnames/${selectedRequest!.reference_id}`);
+      return res.data;
+    },
+  });
+  const stockOpnameDetail = stockOpnameDetailData?.data ?? null;
+
   const mutation = useMutation({
     mutationFn: (payload: { id: number; action: 'Approve' | 'Reject'; comment?: string }) => {
       const route = payload.action === 'Approve' ? 'approve' : 'reject';
@@ -191,6 +261,9 @@ const ApprovalsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['transfers'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['material-stock-opnames'] });
+      queryClient.invalidateQueries({ queryKey: ['access-request-options'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setSelectedRequest(null);
       setPendingAction(null);
       success('Success', `Request has been ${variables.action.toLowerCase()}ed.`);
@@ -204,6 +277,64 @@ const ApprovalsPage: React.FC = () => {
     setSelectedRequest(null);
     setPendingAction(null);
   };
+
+  const renderActionArea = () => (
+    selectedRequest?.status === 'Pending' && (
+      <div className="pt-4 border-t border-gray-100 space-y-3">
+        {pendingAction === null ? (
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="danger"
+              leftIcon={<XCircle className="h-4 w-4" />}
+              onClick={() => setPendingAction('Reject')}
+            >
+              Reject
+            </Button>
+            <Button
+              variant="success"
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+              onClick={() => setPendingAction('Approve')}
+            >
+              Approve
+            </Button>
+          </div>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const fd = new FormData(e.currentTarget);
+              const comment = fd.get('comment') as string;
+              if (selectedRequest) {
+                mutation.mutate({ id: selectedRequest.id, action: pendingAction, comment });
+              }
+            }}
+            className="space-y-3"
+          >
+            <Textarea
+              label={pendingAction === 'Reject' ? 'Alasan Penolakan' : 'Komentar (Opsional)'}
+              name="comment"
+              rows={3}
+              required={pendingAction === 'Reject'}
+              placeholder={pendingAction === 'Reject' ? 'Berikan alasan penolakan...' : 'Catatan opsional...'}
+            />
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" type="button" onClick={() => setPendingAction(null)}>
+                Batal
+              </Button>
+              <Button
+                variant={pendingAction === 'Approve' ? 'success' : 'danger'}
+                type="submit"
+                loading={mutation.isPending}
+                leftIcon={pendingAction === 'Approve' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+              >
+                Confirm {pendingAction}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    )
+  );
 
   const columns: Column<ApprovalRequest>[] = [
     { key: 'created_at', label: 'Date Requested', sortable: true, render: (val) => formatDate(String(val ?? '')) },
@@ -269,7 +400,7 @@ const ApprovalsPage: React.FC = () => {
         description={selectedRequest ? `Workflow: ${selectedRequest.workflow?.name}` : ''}
         size="lg"
       >
-        {isDetailLoading ? (
+        {isDetailLoading || isAccessDetailLoading || isStockOpnameDetailLoading ? (
           <div className="space-y-3 animate-pulse">
             <div className="h-4 bg-gray-100 rounded w-3/4" />
             <div className="h-4 bg-gray-100 rounded w-1/2" />
@@ -372,65 +503,159 @@ const ApprovalsPage: React.FC = () => {
               </div>
             )}
 
-            {/* Action area */}
-            {selectedRequest?.status === 'Pending' && (
-              <div className="pt-4 border-t border-gray-100 space-y-3">
-                {pendingAction === null ? (
-                  <div className="flex justify-end gap-3">
-                    <Button
-                      variant="danger"
-                      leftIcon={<XCircle className="h-4 w-4" />}
-                      onClick={() => setPendingAction('Reject')}
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      variant="success"
-                      leftIcon={<CheckCircle2 className="h-4 w-4" />}
-                      onClick={() => setPendingAction('Approve')}
-                    >
-                      Approve
-                    </Button>
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const fd = new FormData(e.currentTarget);
-                      const comment = fd.get('comment') as string;
-                      if (selectedRequest) {
-                        mutation.mutate({ id: selectedRequest.id, action: pendingAction, comment });
-                      }
-                    }}
-                    className="space-y-3"
-                  >
-                    <Textarea
-                      label={pendingAction === 'Reject' ? 'Alasan Penolakan' : 'Komentar (Opsional)'}
-                      name="comment"
-                      rows={3}
-                      required={pendingAction === 'Reject'}
-                      placeholder={pendingAction === 'Reject' ? 'Berikan alasan penolakan...' : 'Catatan opsional...'}
-                    />
-                    <div className="flex justify-end gap-3">
-                      <Button variant="ghost" type="button" onClick={() => setPendingAction(null)}>
-                        Batal
-                      </Button>
-                      <Button
-                        variant={pendingAction === 'Approve' ? 'success' : 'danger'}
-                        type="submit"
-                        loading={mutation.isPending}
-                        leftIcon={pendingAction === 'Approve' ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-                      >
-                        Confirm {pendingAction}
-                      </Button>
-                    </div>
-                  </form>
-                )}
+            {renderActionArea()}
+          </div>
+        ) : accessDetail ? (
+          <div className="space-y-5">
+            <div className="grid md:grid-cols-2 gap-3 text-sm">
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Requester</p>
+                <p className="font-semibold text-gray-900">{accessDetail.user?.name}</p>
+                <p className="text-[11px] text-gray-400">{accessDetail.user?.username}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Status</p>
+                <Badge variant={accessDetail.status === 'Approved' ? 'active' : accessDetail.status === 'Rejected' ? 'inactive' : 'pending'}>
+                  {accessDetail.status}
+                </Badge>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Current Role</p>
+                <p className="font-semibold text-gray-900">{accessDetail.current_role?.name ?? accessDetail.user?.role?.name ?? 'N/A'}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Requested Role</p>
+                <p className="font-semibold text-gray-900">{accessDetail.requested_role?.name}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Current Estate</p>
+                <p className="font-semibold text-gray-900">
+                  {accessDetail.current_estate
+                    ? `${accessDetail.current_estate.estate_id} - ${accessDetail.current_estate.estate}`
+                    : accessDetail.user?.estate
+                    ? `${accessDetail.user.estate.estate_id} - ${accessDetail.user.estate.estate}`
+                    : 'N/A'}
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Requested Estate</p>
+                <p className="font-semibold text-gray-900">
+                  {accessDetail.requested_estate?.estate_id} - {accessDetail.requested_estate?.estate}
+                </p>
+              </div>
+            </div>
+
+            {accessDetail.reason && (
+              <div className="bg-gray-50 rounded-xl p-3 text-sm">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1">Reason</p>
+                <p className="text-gray-700">{accessDetail.reason}</p>
               </div>
             )}
+
+            {(accessDetail.approval_requests ?? []).length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Status Persetujuan</p>
+                {accessDetail.approval_requests!.map((req) => (
+                  <ApprovalAccordion key={req.id} request={req} />
+                ))}
+              </div>
+            )}
+
+            {renderActionArea()}
           </div>
-        ) : !isDetailLoading && selectedRequest ? (
-          <p className="text-sm text-gray-400 text-center py-4">Gagal memuat detail transfer.</p>
+        ) : stockOpnameDetail ? (
+          <div className="space-y-5">
+            <div className="grid md:grid-cols-2 gap-3 text-sm">
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Kode Opname</p>
+                <p className="font-semibold text-gray-900">{stockOpnameDetail.opname_code}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Status</p>
+                <Badge variant={stockOpnameDetail.status === 'Posted' ? 'active' : stockOpnameDetail.status === 'Rejected' ? 'inactive' : 'pending'}>
+                  {stockOpnameDetail.status}
+                </Badge>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Estate</p>
+                <p className="font-semibold text-gray-900">
+                  {stockOpnameDetail.estate ? `${stockOpnameDetail.estate.estate_id} - ${stockOpnameDetail.estate.estate}` : 'N/A'}
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Tanggal</p>
+                <p className="font-semibold text-gray-900">{formatDate(stockOpnameDetail.opname_date)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Progress</p>
+                <p className="font-semibold text-gray-900">{stockOpnameDetail.counted_items}/{stockOpnameDetail.total_items}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Total Variance</p>
+                <p className={cn(
+                  'font-black',
+                  Number(stockOpnameDetail.total_variance_qty) < 0 ? 'text-red-600' :
+                  Number(stockOpnameDetail.total_variance_qty) > 0 ? 'text-emerald-700' :
+                  'text-gray-700'
+                )}>
+                  {stockOpnameDetail.total_variance_qty}
+                </p>
+              </div>
+            </div>
+
+            {(stockOpnameDetail.items ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-2">Variance Items</p>
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-500 font-bold uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Material</th>
+                        <th className="px-4 py-2 text-right">System</th>
+                        <th className="px-4 py-2 text-right">Fisik</th>
+                        <th className="px-4 py-2 text-right">Selisih</th>
+                        <th className="px-4 py-2 text-left">Alasan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {stockOpnameDetail.items
+                        .filter((item) => Number(item.variance_qty) !== 0)
+                        .map((item) => (
+                          <tr key={item.id}>
+                            <td className="px-4 py-2">
+                              <p className="font-medium text-gray-800">{item.material_name}</p>
+                              <p className="text-[11px] text-gray-400 font-mono">{item.material_code}</p>
+                            </td>
+                            <td className="px-4 py-2 text-right text-gray-600">{item.system_stock_snapshot} {item.unit?.nama ?? ''}</td>
+                            <td className="px-4 py-2 text-right text-gray-600">{item.final_physical_stock ?? '-'} {item.unit?.nama ?? ''}</td>
+                            <td className={cn(
+                              'px-4 py-2 text-right font-bold',
+                              Number(item.variance_qty) < 0 ? 'text-red-600' : 'text-emerald-700'
+                            )}>
+                              {item.variance_qty}
+                            </td>
+                            <td className="px-4 py-2 text-gray-600">{item.variance_reason ?? '-'}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {(stockOpnameDetail.approval_requests ?? []).length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Status Persetujuan</p>
+                {stockOpnameDetail.approval_requests!.map((req) => (
+                  <ApprovalAccordion key={req.id} request={req} />
+                ))}
+              </div>
+            )}
+
+            {renderActionArea()}
+          </div>
+        ) : !isDetailLoading && !isAccessDetailLoading && !isStockOpnameDetailLoading && selectedRequest ? (
+          <p className="text-sm text-gray-400 text-center py-4">Gagal memuat detail request.</p>
         ) : null}
       </Modal>
     </div>

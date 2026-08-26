@@ -14,11 +14,11 @@ return new class extends Migration
         Schema::create('material_transfer_histories', function (Blueprint $table) {
             $table->id();
             $table->foreignId('transfer_id')->constrained('transfers')->cascadeOnDelete();
-            $table->foreignId('transfer_item_id')->nullable()->constrained('transfer_items')->nullOnDelete();
+            $table->foreignId('transfer_item_id')->nullable()->constrained('transfer_items')->noActionOnDelete();
             $table->string('source_material_code', 25);
             $table->string('destination_material_code', 25);
-            $table->foreignId('from_estate_id')->nullable()->constrained('estates')->nullOnDelete();
-            $table->foreignId('to_estate_id')->nullable()->constrained('estates')->nullOnDelete();
+            $table->foreignId('from_estate_id')->nullable()->constrained('estates')->noActionOnDelete();
+            $table->foreignId('to_estate_id')->nullable()->constrained('estates')->noActionOnDelete();
             $table->decimal('qty', 10, 1);
             $table->boolean('destination_created')->default(false);
             $table->decimal('source_stock_before', 10, 1);

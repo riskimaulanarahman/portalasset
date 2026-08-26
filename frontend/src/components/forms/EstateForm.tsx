@@ -1,5 +1,5 @@
 import React from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useQuery } from '@tanstack/react-query';
@@ -36,7 +36,7 @@ const EstateForm: React.FC<EstateFormProps> = ({ initialData, onSubmit, onCancel
   });
 
   const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<EstateFormValues>({
-    resolver: zodResolver(estateSchema),
+    resolver: zodResolver(estateSchema) as Resolver<EstateFormValues>,
     defaultValues: initialData ? {
       estate_id:        initialData.estate_id,
       estate:           initialData.estate,

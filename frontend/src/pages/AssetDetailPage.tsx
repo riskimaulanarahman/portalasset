@@ -1,20 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios';
 import {
-  ArrowLeft, ArrowLeftRight, Calendar, MapPin, Tag, Briefcase, History,
-  Wrench, Info, Plus, AlertTriangle, FileX, Download,
+  ArrowLeft, ArrowLeftRight, Calendar, MapPin, Tag, Briefcase,
+  Wrench, Info, Plus, AlertTriangle, FileX, Download, CheckCircle2, Pencil,
 } from 'lucide-react';
 import useTitle from '../hooks/useTitle';
 import Modal from '../components/Modal';
 import Badge, { kondisiBadge } from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import MemberPicker, { type MemberPickerItem } from '../components/MemberPicker';
 import AssetConditionForm from '../components/forms/AssetConditionForm';
 import AssetMaintenanceForm from '../components/forms/AssetMaintenanceForm';
 import WriteOffForm from '../components/forms/WriteOffForm';
 import { useToast } from '../components/ui/Toast';
-import { formatDate } from '../lib/utils';
+import { formatDate, parseBoolean } from '../lib/utils';
 import { hasStoredPermission } from '../lib/access';
 import Swal from 'sweetalert2';
 
@@ -32,10 +33,16 @@ const AssetDetailPage: React.FC = () => {
   const [maintenanceModal, setMaintenanceModal] = useState(false);
   const [writeOffModal, setWriteOffModal]       = useState(false);
   const [prefilledMaintenance, setPrefilledMaintenance] = useState<any>(null);
+  const [selectedMaintenance, setSelectedMaintenance] = useState<any>(null);
 
   const canCreateCondition   = hasStoredPermission('create-asset-conditions');
   const canCreateMaintenance = hasStoredPermission('create-asset-maintenances');
+  const canEditMaintenance   = hasStoredPermission('edit-asset-maintenances');
   const canCreateWriteOff    = hasStoredPermission('create-write-offs');
+  const canCreateDamageReport = hasStoredPermission('create-asset-reports');
+  const canRecordCondition    = canCreateCondition || canCreateDamageReport;
+  const canAssignMember      = hasStoredPermission('assign-asset-members') || hasStoredPermission('edit-assets');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
 
   const { data: asset, isLoading, error } = useQuery({
     queryKey: ['asset', regId],
@@ -45,17 +52,79 @@ const AssetDetailPage: React.FC = () => {
     },
   });
 
+  const { data: members = [], isFetching: isFetchingMembers } = useQuery<MemberPickerItem[]>({
+    queryKey: ['asset-members'],
+    queryFn: async () => {
+      const response = await api.get('/anggotas');
+
+      return (response.data.data ?? [])
+        .filter((anggota: any) => !parseBoolean(anggota.not_active))
+        .map((anggota: any) => ({
+          sap_id: String(anggota.sap_id),
+          login_name: anggota.login_name ?? null,
+          nama: String(anggota.nama ?? ''),
+          position: anggota.position ?? null,
+          department: anggota.department ?? null,
+          company_code: anggota.company_code ?? null,
+          cost_center: anggota.cost_center ?? null,
+        }));
+    },
+    enabled: canAssignMember || canCreateMaintenance || canEditMaintenance || canCreateDamageReport,
+  });
+
+  useEffect(() => {
+    setSelectedMemberId(asset?.anggota_id ?? '');
+  }, [asset?.reg_id, asset?.anggota_id]);
+
   // Condition mutation
   const conditionMutation = useMutation({
-    mutationFn: (data: any) => api.post('/asset-conditions', data),
-    onSuccess: async (_, vars) => {
+    mutationFn: async (data: any) => {
+      const isDamaged = data.kondisi === 'Bad' || data.kondisi === 'Broken';
+
+      if (canCreateDamageReport && isDamaged) {
+        const formData = new FormData();
+        formData.append('date', data.date);
+        formData.append('kondisi', data.kondisi);
+        formData.append('remarks', data.remarks ?? '');
+        formData.append('create_maintenance', data.create_maintenance ? '1' : '0');
+
+        if (data.create_maintenance) {
+          ['terima', 'target', 'sap1', 'nama1', 'sent_', 'keterangan', 'action_remark'].forEach((key) => {
+            if (data[key]) formData.append(key, data[key]);
+          });
+        }
+
+        const file = data.attachment?.[0];
+        if (file) {
+          formData.append('attachment', file);
+        }
+
+        const response = await api.post(`/assets/${regId}/report-damage`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        return { response, usedDamageReport: true };
+      }
+
+      const response = await api.post('/asset-conditions', {
+        reg_id: data.reg_id,
+        kondisi: data.kondisi,
+        date: data.date,
+        remarks: data.remarks,
+      });
+
+      return { response, usedDamageReport: false };
+    },
+    onSuccess: async (result, vars) => {
       queryClient.invalidateQueries({ queryKey: ['asset', regId] });
       queryClient.invalidateQueries({ queryKey: ['asset-conditions'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-maintenances'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setConditionModal(false);
       success('Kondisi tersimpan', 'Riwayat kondisi aset berhasil dicatat.');
 
       const kondisi = vars.kondisi;
-      if (kondisi === 'Bad' || kondisi === 'Broken') {
+      if (!result.usedDamageReport && canCreateMaintenance && (kondisi === 'Bad' || kondisi === 'Broken')) {
         const result = await Swal.fire({
           title: 'Buat Maintenance Request?',
           text: `Kondisi aset ${kondisi}. Ingin membuat request maintenance sekarang?`,
@@ -66,8 +135,7 @@ const AssetDetailPage: React.FC = () => {
           confirmButtonColor: '#1a4731',
         });
         if (result.isConfirmed) {
-          setPrefilledMaintenance({ kondisi });
-          setMaintenanceModal(true);
+          openCreateMaintenanceModal({ kondisi });
         }
       }
       if (kondisi === 'Broken' && canCreateWriteOff) {
@@ -90,14 +158,30 @@ const AssetDetailPage: React.FC = () => {
 
   // Maintenance mutation
   const maintenanceMutation = useMutation({
-    mutationFn: (data: any) => api.post('/asset-maintenances', data),
+    mutationFn: (data: any) => {
+      if (selectedMaintenance?.id) {
+        return api.put(`/asset-maintenances/${selectedMaintenance.id}`, data);
+      }
+
+      return api.post('/asset-maintenances', data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset', regId] });
+      queryClient.invalidateQueries({ queryKey: ['asset-maintenances'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       setMaintenanceModal(false);
       setPrefilledMaintenance(null);
-      success('Maintenance dibuat', 'Request maintenance berhasil disimpan.');
+      setSelectedMaintenance(null);
+      success(
+        selectedMaintenance?.id ? 'Maintenance diperbarui' : 'Maintenance dibuat',
+        selectedMaintenance?.id ? 'Status maintenance berhasil diperbarui.' : 'Request maintenance berhasil disimpan.',
+      );
     },
-    onError: (err: any) => toastError('Gagal', err.response?.data?.message || 'Maintenance gagal disimpan.'),
+    onError: (err: any) => {
+      const errors = err.response?.data?.errors;
+      const firstError = errors ? (Object.values(errors)[0] as string[] | undefined) : undefined;
+      toastError('Gagal', firstError?.[0] || err.response?.data?.message || 'Maintenance gagal disimpan.');
+    },
   });
 
   // Write-Off mutation
@@ -111,6 +195,72 @@ const AssetDetailPage: React.FC = () => {
     onError: (err: any) => toastError('Gagal', err.response?.data?.message || 'Write-off gagal diajukan.'),
   });
 
+  const assignMemberMutation = useMutation({
+    mutationFn: () => api.post(`/assets/${regId}/assign-member`, {
+      anggota_id: selectedMemberId || null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset', regId] });
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      success('Assignment tersimpan', 'Assigned Member aset berhasil diperbarui.');
+    },
+    onError: (err: any) => toastError('Gagal', err.response?.data?.message || 'Assignment member gagal disimpan.'),
+  });
+
+  const handleDownloadWriteOffBA = async (id: number) => {
+    try {
+      const response = await api.get(`/write-offs/${id}/berita-acara`, { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 30_000);
+    } catch (err: any) {
+      toastError('Gagal', err.response?.data?.message || 'Berita Acara write-off belum bisa dibuat.');
+    }
+  };
+
+  const todayInputValue = () => new Date().toISOString().split('T')[0];
+  const dateInputValue = (value?: string | null) => value ? String(value).split('T')[0] : undefined;
+  const maintenanceFormData = (maintenance: any, complete = false) => ({
+    terima: dateInputValue(maintenance.terima),
+    target: dateInputValue(maintenance.target),
+    selesai: complete ? (dateInputValue(maintenance.selesai) ?? todayInputValue()) : dateInputValue(maintenance.selesai),
+    sap1: maintenance.sap1 ?? '',
+    nama1: maintenance.nama1 ?? '',
+    sap2: maintenance.sap2 ?? '',
+    nama2: maintenance.nama2 ?? '',
+    sap3: maintenance.sap3 ?? '',
+    nama3: maintenance.nama3 ?? '',
+    sent_: maintenance.sent_ ?? '',
+    kondisi: complete ? '' : (maintenance.kondisi ?? latestKondisi ?? ''),
+    keterangan: maintenance.keterangan ?? '',
+    action_remark: maintenance.action_remark ?? '',
+    status: complete ? 'Done' : (maintenance.status ?? 'Progress'),
+  });
+
+  const openCreateMaintenanceModal = (initialData: any = null) => {
+    setSelectedMaintenance(null);
+    setPrefilledMaintenance(initialData);
+    setMaintenanceModal(true);
+  };
+
+  const openEditMaintenanceModal = (maintenance: any, complete = false) => {
+    setSelectedMaintenance(maintenance);
+    setPrefilledMaintenance(maintenanceFormData(maintenance, complete));
+    setMaintenanceModal(true);
+  };
+
+  const parseMaintenanceConditionRemark = (remarks?: string | null) => {
+    const match = /^Maintenance #(\d+) selesai:\s*(.*)$/i.exec(remarks ?? '');
+
+    return {
+      isMaintenance: Boolean(match),
+      maintenanceId: match?.[1],
+      text: match ? match[2] : remarks,
+    };
+  };
+
   if (isLoading) return <div className="p-8 text-center text-gray-500">Memuat detail aset...</div>;
   if (error || !asset) return (
     <div className="p-8 text-center text-red-500 bg-red-50 m-6 rounded-xl">
@@ -119,6 +269,7 @@ const AssetDetailPage: React.FC = () => {
   );
 
   const latestKondisi = asset.latest_condition?.kondisi;
+  const isAssetInactive = parseBoolean(asset.not_active);
   const pendingWriteOff = (asset.write_off_requests ?? []).find(
     (wo: any) => wo.approval_requests?.some((ar: any) => ar.status === 'Pending')
   );
@@ -127,7 +278,7 @@ const AssetDetailPage: React.FC = () => {
     { id: 'info',        label: 'Informasi' },
     { id: 'kondisi',     label: 'Kondisi',     count: asset.conditions?.length ?? 0 },
     { id: 'maintenance', label: 'Maintenance', count: asset.maintenances?.length ?? 0 },
-    { id: 'transaksi',   label: 'Riwayat Transfer', count: asset.transfer_history?.length ?? 0 },
+    { id: 'transaksi',   label: 'Riwayat Transfer', count: asset.transfer_histories?.length ?? asset.transfer_history?.length ?? 0 },
   ];
 
   return (
@@ -147,8 +298,8 @@ const AssetDetailPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {latestKondisi && kondisiBadge(latestKondisi)}
-          <span className={`px-3 py-1 text-xs rounded-full font-semibold ${asset.not_active ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-            {asset.not_active ? 'Inactive' : 'Active'}
+          <span className={`px-3 py-1 text-xs rounded-full font-semibold ${isAssetInactive ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+            {isAssetInactive ? 'Inactive' : 'Active'}
           </span>
         </div>
       </div>
@@ -204,8 +355,34 @@ const AssetDetailPage: React.FC = () => {
                   <Field label="Tipe / Merek / Seri" value={`${asset.type} — ${asset.manufacture} (${asset.series})`} />
                   <Field icon={<MapPin />} label="Section" value={asset.section?.section} />
                   <Field icon={<MapPin />} label="Estate" value={asset.estate?.estate} />
+                  <Field label="Department" value={asset.department?.name} />
+                  <Field label="Divisi" value={asset.division?.name} />
+                  <Field label="Assigned Member" value={asset.anggota ? `${asset.anggota.nama} (${asset.anggota.sap_id})` : '-'} />
                   <Field label="Alokasi" value={asset.alokasi} />
                   <Field icon={<Briefcase />} label="Vendor / Source" value={`${asset.vendor?.nama || '-'} ${asset.source ? `(${asset.source})` : ''}`} />
+                  {canAssignMember && (
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 space-y-3">
+                      <MemberPicker
+                        label="Update Assigned Member"
+                        value={selectedMemberId}
+                        members={members}
+                        isLoading={isFetchingMembers}
+                        onChange={setSelectedMemberId}
+                        selectedFallbackLabel={
+                          asset.anggota ? `${asset.anggota.nama} (${asset.anggota.sap_id})` : undefined
+                        }
+                        disabled={assignMemberMutation.isPending}
+                      />
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => assignMemberMutation.mutate()}
+                        loading={assignMemberMutation.isPending}
+                      >
+                        Save Assignment
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Keterangan</p>
@@ -220,7 +397,7 @@ const AssetDetailPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Riwayat kondisi aset dari waktu ke waktu.</p>
                   <div className="flex gap-2">
-                    {canCreateCondition && (
+                    {canRecordCondition && (
                       <Button
                         size="sm"
                         variant="primary"
@@ -230,7 +407,7 @@ const AssetDetailPage: React.FC = () => {
                         Catat Kondisi
                       </Button>
                     )}
-                    {canCreateWriteOff && !asset.not_active && !pendingWriteOff && (
+                    {canCreateWriteOff && !isAssetInactive && !pendingWriteOff && (
                       <Button
                         size="sm"
                         variant="danger"
@@ -245,15 +422,26 @@ const AssetDetailPage: React.FC = () => {
 
                 {asset.conditions?.length > 0 ? (
                   <div className="space-y-2">
-                    {asset.conditions.map((cond: any) => (
+                    {asset.conditions.map((cond: any) => {
+                      const conditionRemark = parseMaintenanceConditionRemark(cond.remarks);
+
+                      return (
                       <div key={cond.id} className="flex items-start gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
                         <div className="shrink-0">{kondisiBadge(cond.kondisi)}</div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700">{cond.remarks || <span className="text-gray-400 italic">Tidak ada keterangan</span>}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {conditionRemark.isMaintenance && (
+                              <Badge variant="info" dot>
+                                Maintenance #{conditionRemark.maintenanceId}
+                              </Badge>
+                            )}
+                            <p className="text-sm text-gray-700">{conditionRemark.text || <span className="text-gray-400 italic">Tidak ada keterangan</span>}</p>
+                          </div>
                           <p className="text-xs text-gray-400 mt-0.5">{formatDate(cond.date)} · {cond.create_by}</p>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-12 text-gray-400 text-sm italic">Belum ada riwayat kondisi.</div>
@@ -271,7 +459,7 @@ const AssetDetailPage: React.FC = () => {
                       size="sm"
                       variant="primary"
                       leftIcon={<Plus className="h-3.5 w-3.5" />}
-                      onClick={() => { setPrefilledMaintenance(null); setMaintenanceModal(true); }}
+                      onClick={() => openCreateMaintenanceModal()}
                     >
                       Buat Maintenance
                     </Button>
@@ -294,6 +482,30 @@ const AssetDetailPage: React.FC = () => {
                             <Badge variant={maint.status === 'Done' ? 'active' : 'pending'} dot>
                               {maint.status ?? 'Progress'}
                             </Badge>
+                            {canEditMaintenance && (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="outline"
+                                  leftIcon={<Pencil className="h-3 w-3" />}
+                                  onClick={() => openEditMaintenanceModal(maint)}
+                                >
+                                  Edit
+                                </Button>
+                                {maint.status !== 'Done' && (
+                                  <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="success"
+                                    leftIcon={<CheckCircle2 className="h-3 w-3" />}
+                                    onClick={() => openEditMaintenanceModal(maint, true)}
+                                  >
+                                    Selesaikan
+                                  </Button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="text-xs text-gray-600 grid grid-cols-2 gap-1">
@@ -301,6 +513,8 @@ const AssetDetailPage: React.FC = () => {
                           {maint.nama2 && <span>PIC 2: <strong>{maint.nama2}</strong></span>}
                           {maint.nama3 && <span>PIC 3: <strong>{maint.nama3}</strong></span>}
                           {maint.sent_ && <span>Tujuan: <strong>{maint.sent_}</strong></span>}
+                          {maint.selesai && <span>Selesai: <strong>{formatDate(maint.selesai)}</strong></span>}
+                          {maint.update_by && <span>Update: <strong>{maint.update_by}</strong> {maint.update_date ? `- ${formatDate(maint.update_date)}` : ''}</span>}
                         </div>
                         {maint.keterangan && (
                           <p className="text-xs text-gray-600 italic">"{maint.keterangan}"</p>
@@ -322,10 +536,32 @@ const AssetDetailPage: React.FC = () => {
             {/* Tab: Riwayat Transfer */}
             {activeTab === 'transaksi' && (
               <div className="p-6 space-y-3">
-                {asset.transfer_history?.length > 0 ? (
+                {asset.transfer_histories?.length > 0 ? (
+                  asset.transfer_histories.map((history: any) => (
+                    <div key={history.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <ArrowLeftRight className="h-4 w-4 text-forest-500 shrink-0" />
+                          <span className="text-sm font-semibold text-gray-800 font-mono">
+                            {history.transfer?.transfer_code ?? `Transfer #${history.transfer_id}`}
+                          </span>
+                        </div>
+                        <Badge variant="active" dot>Processed</Badge>
+                      </div>
+                      <div className="text-xs text-gray-600 grid grid-cols-2 gap-1">
+                        <span>Dari: <strong>{history.from_estate?.estate ?? '-'}</strong></span>
+                        <span>Ke: <strong>{history.to_estate?.estate ?? '-'}</strong></span>
+                        <span>Unit Lama: {history.previous_unit_id ?? '-'}</span>
+                        <span>Unit Baru: {history.new_unit_id ?? '-'}</span>
+                        <span>Target Member: {history.target_anggota?.nama ?? history.target_anggota_id ?? '-'}</span>
+                        <span>Diproses: {formatDate(history.processed_at)}</span>
+                        {history.notes && <span className="col-span-2">Catatan: {history.notes}</span>}
+                      </div>
+                    </div>
+                  ))
+                ) : asset.transfer_history?.length > 0 ? (
                   asset.transfer_history.map((item: any) => {
                     const transfer = item.transfer;
-                    const approvalReq = transfer?.approval_requests?.[0];
                     return (
                       <div key={item.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-2">
                         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -381,7 +617,7 @@ const AssetDetailPage: React.FC = () => {
               } />
               <StatRow label="Riwayat Kondisi" value={asset.conditions?.length ?? 0} />
               <StatRow label="Total Maintenance" value={asset.maintenances?.length ?? 0} />
-              <StatRow label="Riwayat Transfer" value={asset.transfer_history?.length ?? 0} />
+              <StatRow label="Riwayat Transfer" value={asset.transfer_histories?.length ?? asset.transfer_history?.length ?? 0} />
               <div className="pt-2 border-t border-white/10">
                 <p className="text-xs opacity-70 mb-1">Dibuat Oleh</p>
                 <p className="text-sm font-medium">{asset.create_by || 'system'}</p>
@@ -407,10 +643,11 @@ const AssetDetailPage: React.FC = () => {
                       </Badge>
                       {isApproved && (
                         <button
-                          onClick={() => window.open(`/api/write-offs/${wo.id}/berita-acara`, '_blank')}
+                          onClick={() => handleDownloadWriteOffBA(wo.id)}
                           className="text-xs text-forest-600 hover:underline flex items-center gap-1"
+                          title="Generate Berita Acara Write-Off (PDF)"
                         >
-                          <Download className="h-3 w-3" /> BA
+                          <Download className="h-3 w-3" /> Generate BA
                         </button>
                       )}
                     </div>
@@ -425,23 +662,34 @@ const AssetDetailPage: React.FC = () => {
       </div>
 
       {/* Modal: Catat Kondisi */}
-      <Modal isOpen={conditionModal} onClose={() => setConditionModal(false)} title="Catat Kondisi Aset" size="md">
+      <Modal isOpen={conditionModal} onClose={() => setConditionModal(false)} title="Catat Kondisi Aset" size="xl">
         <AssetConditionForm
           regId={regId!}
           onSubmit={(data) => conditionMutation.mutate(data)}
           onCancel={() => setConditionModal(false)}
           isLoading={conditionMutation.isPending}
+          allowGood={canCreateCondition}
+          enableDamageWorkflow={canCreateDamageReport}
+          members={members}
+          isMembersLoading={isFetchingMembers}
         />
       </Modal>
 
       {/* Modal: Buat Maintenance */}
-      <Modal isOpen={maintenanceModal} onClose={() => { setMaintenanceModal(false); setPrefilledMaintenance(null); }} title="Buat Maintenance Request" size="xl">
+      <Modal
+        isOpen={maintenanceModal}
+        onClose={() => { setMaintenanceModal(false); setPrefilledMaintenance(null); setSelectedMaintenance(null); }}
+        title={selectedMaintenance?.id ? 'Update Maintenance Request' : 'Buat Maintenance Request'}
+        size="xl"
+      >
         <AssetMaintenanceForm
           regId={regId!}
           initialData={prefilledMaintenance}
           onSubmit={(data) => maintenanceMutation.mutate(data)}
-          onCancel={() => { setMaintenanceModal(false); setPrefilledMaintenance(null); }}
+          onCancel={() => { setMaintenanceModal(false); setPrefilledMaintenance(null); setSelectedMaintenance(null); }}
           isLoading={maintenanceMutation.isPending}
+          members={members}
+          isMembersLoading={isFetchingMembers}
         />
       </Modal>
 

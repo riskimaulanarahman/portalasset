@@ -10,9 +10,9 @@ import Button from '../ui/Button';
 const materialSchema = z.object({
   code: z.string().min(1, 'Material code is required').max(20),
   nama: z.string().min(1, 'Material name is required').max(200),
-  cat_id: z.number().min(1, 'Category is required'),
+  category_id: z.number().min(1, 'Category is required'),
   section_id: z.number().min(1, 'Section is required'),
-  part_no: z.string().max(50).nullable().default(''),
+  matcode: z.string().max(10).nullable().default(''),
   unit_id: z.number().min(1, 'Unit is required'),
   estate_id: z.number().min(1, 'Estate is required'),
   stock: z.number().default(0),
@@ -66,9 +66,9 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
     defaultValues: initialData ? {
       code: initialData.code,
       nama: initialData.nama,
-      cat_id: Number(initialData.cat_id),
+      category_id: Number(initialData.category_id ?? initialData.cat_id),
       section_id: Number(initialData.section_id),
-      part_no: initialData.part_no || '',
+      matcode: initialData.matcode || '',
       unit_id: Number(initialData.unit_id),
       estate_id: Number(initialData.estate_id),
       stock: Number(initialData.stock),
@@ -77,9 +77,9 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
     } : {
       code: '',
       nama: '',
-      cat_id: 0,
+      category_id: 0,
       section_id: 0,
-      part_no: '',
+      matcode: '',
       unit_id: 0,
       estate_id: 0,
       stock: 0,
@@ -128,9 +128,9 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
           }
         />
         <Input
-          label="Part Number"
-          {...register('part_no')}
-          error={errors.part_no?.message}
+          label="Matcode / Part Number"
+          {...register('matcode')}
+          error={errors.matcode?.message}
           placeholder="Part number (optional)"
         />
       </FormGroup>
@@ -146,11 +146,11 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
       <FormGroup cols={2}>
         <Select
           label="Category"
-          {...register('cat_id', { setValueAs: v => v === "" ? undefined : Number(v) })}
+          {...register('category_id', { setValueAs: v => v === "" ? undefined : Number(v) })}
           required
           options={categories?.map((c: any) => ({ value: c.id, label: c.category })) || []}
           placeholder="Select Category"
-          error={errors.cat_id?.message}
+          error={errors.category_id?.message}
         />
         <Select
           label="Estate"
@@ -162,7 +162,7 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
         />
       </FormGroup>
 
-      <FormGroup cols={2}>
+      <FormGroup cols={1}>
         <Select
           label="Section"
           {...register('section_id', { setValueAs: v => v === "" ? undefined : Number(v) })}
@@ -170,12 +170,6 @@ const MaterialForm: React.FC<MaterialFormProps> = ({ initialData, onSubmit, onCa
           options={sections?.map((s: any) => ({ value: s.id, label: s.section })) || []}
           placeholder="Select Section"
           error={errors.section_id?.message}
-        />
-        <Input
-          label="Part Number"
-          {...register('part_no')}
-          error={errors.part_no?.message}
-          placeholder="Part number (optional)"
         />
       </FormGroup>
 

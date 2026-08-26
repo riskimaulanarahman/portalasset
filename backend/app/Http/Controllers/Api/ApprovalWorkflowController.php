@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalWorkflow;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -136,21 +137,74 @@ class ApprovalWorkflowController extends Controller implements HasMiddleware
             'estate_id' => 'nullable|exists:estates,id',
         ]);
 
-        $workflow = ApprovalWorkflow::where('module_name', $request->module_name)
+        $workflow = ApprovalWorkflow::with('steps')
+            ->where('module_name', $request->module_name)
             ->where('is_active', true)
             ->where('estate_id', $request->estate_id)
             ->first();
 
         if (!$workflow) {
-            $workflow = ApprovalWorkflow::where('module_name', $request->module_name)
+            $workflow = ApprovalWorkflow::with('steps')
+                ->where('module_name', $request->module_name)
                 ->where('is_active', true)
                 ->whereNull('estate_id')
                 ->first();
         }
 
+        $firstStep = $workflow?->steps->where('sequence', 1)->first();
+        $ready = $workflow
+            && $firstStep
+            && $this->stepHasActiveApprover($firstStep, $request->integer('estate_id') ?: null);
+
         return response()->json([
             'exists' => !!$workflow,
-            'workflow' => $workflow
+            'ready' => $ready,
+            'message' => $this->workflowReadinessMessage($workflow, $firstStep, $ready),
+            'workflow' => $workflow,
         ]);
+    }
+
+    private function stepHasActiveApprover($step, ?int $estateId): bool
+    {
+        if ($step->user_id) {
+            $query = User::whereKey($step->user_id)
+                ->where('not_active', false);
+
+            if ($estateId) {
+                $query->where('estate_id', $estateId);
+            }
+
+            return $query->exists();
+        }
+
+        if ($step->role_name) {
+            $query = User::whereHas('role', fn ($role) => $role->where('name', $step->role_name))
+                ->where('not_active', false);
+
+            if ($estateId) {
+                $query->where('estate_id', $estateId);
+            }
+
+            return $query->exists();
+        }
+
+        return false;
+    }
+
+    private function workflowReadinessMessage(?ApprovalWorkflow $workflow, $firstStep, bool $ready): string
+    {
+        if (!$workflow) {
+            return 'Workflow aktif belum dikonfigurasi.';
+        }
+
+        if (!$firstStep) {
+            return 'Workflow belum memiliki step approval pertama.';
+        }
+
+        if (!$ready) {
+            return 'Workflow belum memiliki approver aktif untuk step pertama.';
+        }
+
+        return 'Workflow siap digunakan.';
     }
 }

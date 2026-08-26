@@ -16,7 +16,13 @@ class CostCenter extends Model
         'dept',
         'estate',
         'join_estate',
+        'estate_id',
         'created_by',
         'update_by',
     ];
+
+    public function mappedEstate()
+    {
+        return $this->belongsTo(Estate::class, 'estate_id');
+    }
 }

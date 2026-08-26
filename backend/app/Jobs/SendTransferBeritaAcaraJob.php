@@ -24,8 +24,8 @@ class SendTransferBeritaAcaraJob implements ShouldQueue
     public function __construct($transferId, $toEmails, $ccEmail = null)
     {
         $this->transferId = $transferId;
-        $this->toEmails = $toEmails;
-        $this->ccEmail = $ccEmail;
+        $this->toEmails = $this->normalizeEmails($toEmails);
+        $this->ccEmail = $this->withoutEmails($this->normalizeEmails($ccEmail), $this->toEmails);
     }
 
     /**
@@ -58,7 +58,7 @@ class SendTransferBeritaAcaraJob implements ShouldQueue
         }
 
         try {
-            $transfer = Transfer::with(['fromEstate', 'toEstate', 'items', 'approvalRequests.logs.user'])->find($this->transferId);
+            $transfer = Transfer::with(['fromEstate', 'toEstate', 'items', 'approvalRequests.logs.user', 'anggotaPenerima'])->find($this->transferId);
 
             if (!$transfer || empty($this->toEmails)) {
                 return;
@@ -74,5 +74,34 @@ class SendTransferBeritaAcaraJob implements ShouldQueue
         } catch (\Exception $e) {
             Log::error('Task SendTransferBeritaAcaraJob Failed: '.$e->getMessage());
         }
+    }
+
+    private function normalizeEmails($emails): array
+    {
+        if (!$emails) {
+            return [];
+        }
+
+        $emails = is_array($emails) ? $emails : [$emails];
+
+        return collect($emails)
+            ->filter()
+            ->map(fn ($email) => trim((string) $email))
+            ->filter()
+            ->unique(fn ($email) => mb_strtolower($email))
+            ->values()
+            ->all();
+    }
+
+    private function withoutEmails(array $emails, array $exclude): array
+    {
+        $excluded = collect($exclude)
+            ->map(fn ($email) => mb_strtolower(trim((string) $email)))
+            ->all();
+
+        return collect($emails)
+            ->reject(fn ($email) => in_array(mb_strtolower($email), $excluded, true))
+            ->values()
+            ->all();
     }
 }

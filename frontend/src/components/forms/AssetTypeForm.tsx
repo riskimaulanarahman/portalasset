@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
 const assetTypeSchema = z.object({
-  name: z.string().min(1, 'Asset type name is required').max(100),
+  name: z.string().min(1, 'Asset type name is required').max(25),
 });
 
 type AssetTypeFormValues = z.infer<typeof assetTypeSchema>;

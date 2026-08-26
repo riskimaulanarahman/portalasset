@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ArrowLeftRight, Layers,
   Database, TrendingUp, Activity, Clock, BarChart3,
-  Download, Upload, Box, MapPin, Play,
+  Download, Upload, Box, MapPin, Play, ShieldAlert, CheckCircle2,
+  ClipboardCheck,
 } from 'lucide-react';
 import api from '../api/axios';
 import StatsCard from '../components/ui/StatsCard';
@@ -11,6 +12,9 @@ import Badge, { txTypeBadge, statusBadge } from '../components/ui/Badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
 import { formatDate, formatNumber, truncate, getStoredUser } from '../lib/utils';
 import useTitle from '../hooks/useTitle';
+import Button from '../components/ui/Button';
+import { Select } from '../components/ui/FormFields';
+import { useToast } from '../components/ui/Toast';
 
 // ── Interfaces ─────────────────────────────────────────────────────────────────
 interface TransferStats {
@@ -29,8 +33,92 @@ interface TransferStats {
   }[];
 }
 
+interface StockOpnameStats {
+  total: number;
+  pending: number;
+  review: number;
+  posted_this_month: number;
+  variance_value_this_month: number;
+  recent: {
+    id: number;
+    opname_code: string;
+    status: string;
+    opname_date: string;
+    total_variance_qty: number;
+    total_variance_value: number;
+    estate?: { estate: string; estate_id?: string };
+    section?: { section: string } | null;
+  }[];
+  pending_aging?: {
+    id: number;
+    opname_code: string;
+    opname_date: string;
+    submitted_at?: string | null;
+    days_pending: number;
+    total_variance_value: number;
+    estate?: { estate: string; estate_id?: string };
+    section?: { section: string } | null;
+  }[];
+  top_shortages_this_month?: {
+    material_code: string;
+    material_name: string;
+    shortage_qty: number;
+    shortage_value: number;
+  }[];
+}
+
+interface AssetAssignmentReminder {
+  transfer_id: number;
+  transfer_code: string;
+  transfer_date: string;
+  receive_date?: string | null;
+  asset_id: string;
+  item_notes?: string | null;
+  from_estate?: { estate: string; estate_id?: string };
+  to_estate?: { estate: string; estate_id?: string };
+  anggota_penerima?: {
+    sap_id: string;
+    nama: string;
+    position?: string | null;
+  };
+}
+
+interface AssetDamageReminder {
+  reg_id: string;
+  asset_no?: string | null;
+  name?: string;
+  estate?: { estate: string; estate_id?: string };
+  kondisi?: string;
+  remarks?: string | null;
+  condition_date?: string | null;
+}
+
+interface MaintenanceReminder {
+  id: number;
+  reg_id: string;
+  asset_no?: string | null;
+  estate?: { estate: string; estate_id?: string };
+  kondisi?: string;
+  target?: string | null;
+  sent_?: string | null;
+  keterangan?: string | null;
+  status?: string;
+}
+
+interface WriteOffPendingReminder {
+  id: number;
+  reg_id: string;
+  asset_no?: string | null;
+  estate?: { estate: string; estate_id?: string };
+  kondisi?: string;
+  keterangan?: string | null;
+  date?: string | null;
+  status?: string;
+}
+
 interface DashboardStats {
   total_assets:          number;
+  asset_access_setup_required?: boolean;
   active_assets:         number;
   total_materials:       number;
   total_transactions:    number;
@@ -40,6 +128,11 @@ interface DashboardStats {
   recent_assets:         Asset[];
   stock_alerts:          StockAlert[];
   transfer_stats?:       TransferStats;  // #20 FIX
+  stock_opname_stats?:   StockOpnameStats;
+  asset_assignment_reminders?: AssetAssignmentReminder[];
+  asset_damage_reminders?: AssetDamageReminder[];
+  maintenance_reminders?: MaintenanceReminder[];
+  write_off_pending_reminders?: WriteOffPendingReminder[];
 }
 
 interface Transaction {
@@ -69,6 +162,12 @@ interface StockAlert {
   unit:       string;
 }
 
+interface EstateOption {
+  id: number;
+  estate_id: string;
+  estate: string;
+}
+
 // ── Mini bar chart ─────────────────────────────────────────────────────────────
 const MiniBar: React.FC<{ value: number; max: number; color?: string }> = ({
   value, max, color = 'bg-forest-500'
@@ -87,11 +186,51 @@ const TimelineDot: React.FC<{ type: 'IN' | 'OUT' }> = ({ type }) => (
 );
 
 // ── Dashboard Page ─────────────────────────────────────────────────────────────
+const ReminderPanel: React.FC<{
+  title: string;
+  count: number;
+  tone: 'red' | 'amber' | 'gray';
+  children: React.ReactNode;
+}> = ({ title, count, tone, children }) => {
+  const toneClass = {
+    red: 'border-red-200 bg-red-50 text-red-900',
+    amber: 'border-amber-200 bg-amber-50 text-amber-900',
+    gray: 'border-gray-200 bg-gray-50 text-gray-900',
+  }[tone];
+
+  return (
+    <div className={`rounded-xl border overflow-hidden ${toneClass}`}>
+      <div className="px-4 py-3 border-b border-current/10 flex items-center justify-between">
+        <h2 className="text-xs font-black">{title}</h2>
+        <Badge variant={tone === 'gray' ? 'inactive' : 'pending'}>{count}</Badge>
+      </div>
+      <div className="divide-y divide-current/10">{children}</div>
+    </div>
+  );
+};
+
+const ReminderRow: React.FC<{ title: string; subtitle: string; meta: string }> = ({ title, subtitle, meta }) => (
+  <div className="px-4 py-3 text-xs">
+    <div className="flex items-center justify-between gap-3">
+      <span className="font-mono font-black truncate">{title}</span>
+      <span className="shrink-0 opacity-70">{meta}</span>
+    </div>
+    <p className="mt-1 font-semibold opacity-80 truncate">{subtitle}</p>
+  </div>
+);
+
 const DashboardPage: React.FC = () => {
   useTitle('Dashboard');
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const [tab, setTab] = useState('overview');
+  const [selectedEstateId, setSelectedEstateId] = useState('');
+  const [profileUser, setProfileUser] = useState(getStoredUser());
 
-  const currentUser = getStoredUser();
+  const currentUser = profileUser;
+  const isPendingActivation = Boolean(currentUser?.not_active);
+  const needsEstateSelection = !isPendingActivation && !currentUser?.estate_id;
+  const canLoadDashboardData = !isPendingActivation && !needsEstateSelection;
   const estateName  = currentUser?.estate?.estate ?? '—';
   const estateCode  = currentUser?.estate?.estate_id ?? '';
 
@@ -101,6 +240,7 @@ const DashboardPage: React.FC = () => {
       const res = await api.get('/dashboard');
       return res.data;
     },
+    enabled: canLoadDashboardData,
     refetchInterval: 60_000,
   });
 
@@ -109,6 +249,37 @@ const DashboardPage: React.FC = () => {
     queryFn: async () => {
       const res = await api.get('/materials');
       return res.data;
+    },
+    enabled: canLoadDashboardData,
+  });
+
+  const { data: estateOptions = [] } = useQuery<EstateOption[]>({
+    queryKey: ['profile-estate-options'],
+    queryFn: async () => {
+      const res = await api.get('/profile/estate-options');
+      return res.data.data ?? [];
+    },
+    enabled: needsEstateSelection,
+  });
+
+  const estateMutation = useMutation({
+    mutationFn: async () => api.post('/profile/estate', { estate_id: Number(selectedEstateId) }),
+    onSuccess: (response) => {
+      const updatedUser = {
+        ...response.data.user,
+        permissions: response.data.permissions ?? [],
+      };
+
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setProfileUser(updatedUser);
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      toast.success('Estate selected', 'Estate berhasil disimpan.');
+    },
+    onError: (err: any) => {
+      const errors = err.response?.data?.errors;
+      const firstError = errors ? (Object.values(errors)[0] as string[] | undefined) : undefined;
+      toast.error('Failed', firstError?.[0] || err.response?.data?.message || 'Tidak dapat menyimpan estate.');
     },
   });
 
@@ -122,6 +293,11 @@ const DashboardPage: React.FC = () => {
   const recent     = stats?.recent_transactions ?? [];
   const recentAssets = stats?.recent_assets ?? [];
   const alerts     = stats?.stock_alerts ?? [];
+  const stockOpnameStats = stats?.stock_opname_stats;
+  const assetAssignmentReminders = stats?.asset_assignment_reminders ?? [];
+  const assetDamageReminders = stats?.asset_damage_reminders ?? [];
+  const maintenanceReminders = stats?.maintenance_reminders ?? [];
+  const writeOffPendingReminders = stats?.write_off_pending_reminders ?? [];
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const inCount  = recent.filter((t) => t.type === 'IN').length;
@@ -129,6 +305,72 @@ const DashboardPage: React.FC = () => {
   const utilRate = stats
     ? Math.round((stats.active_assets / (stats.total_assets || 1)) * 100)
     : 0;
+
+  if (isPendingActivation) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
+        <div className="max-w-xl w-full bg-white rounded-2xl border border-amber-100 shadow-sm p-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 ring-4 ring-amber-50">
+            <ShieldAlert className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl font-black text-gray-900">Akun anda belum diaktivasi oleh admin</h1>
+          <p className="mt-3 text-sm font-medium text-gray-500">
+            Login LDAP berhasil. Silakan tunggu admin mengaktifkan akun dan memilih role Anda.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsEstateSelection) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center animate-fade-in">
+        <form
+          className="max-w-xl w-full bg-white rounded-2xl border border-forest-100 shadow-sm p-8 space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!selectedEstateId) {
+              toast.warning('Estate required', 'Silakan pilih estate terlebih dahulu.');
+              return;
+            }
+            estateMutation.mutate();
+          }}
+        >
+          <div className="text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-forest-50 text-forest-700 ring-4 ring-forest-50">
+              <MapPin className="h-7 w-7" />
+            </div>
+            <h1 className="text-2xl font-black text-gray-900">Pilih Estate Anda</h1>
+            <p className="mt-3 text-sm font-medium text-gray-500">
+              Akun sudah aktif. Pilih estate operasional Anda untuk membuka dashboard.
+            </p>
+          </div>
+
+          <Select
+            label="Estate"
+            value={selectedEstateId}
+            onChange={(event) => setSelectedEstateId(event.target.value)}
+            options={estateOptions.map((estate) => ({
+              value: estate.id,
+              label: `${estate.estate_id} - ${estate.estate}`,
+            }))}
+            placeholder="Pilih estate"
+            required
+          />
+
+          <Button
+            type="submit"
+            variant="primary"
+            fullWidth
+            loading={estateMutation.isPending}
+            leftIcon={<CheckCircle2 className="h-4 w-4" />}
+          >
+            Simpan Estate
+          </Button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-7 animate-fade-in">
@@ -153,7 +395,92 @@ const DashboardPage: React.FC = () => {
       </div>
 
       {/* ── Stats grid ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {stats?.asset_access_setup_required && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-800">
+          Akses department/divisi belum diatur oleh admin.
+        </div>
+      )}
+
+      {assetAssignmentReminders.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden">
+          <div className="px-5 py-4 border-b border-amber-100 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-black text-amber-900">Asset Member Update Reminder</h2>
+              <p className="text-xs font-medium text-amber-700 mt-1">
+                Asset transfer approved dengan penerima anggota perlu dipastikan/update pada data assignment asset.
+              </p>
+            </div>
+            <Badge variant="pending">{assetAssignmentReminders.length}</Badge>
+          </div>
+          <div className="divide-y divide-amber-100">
+            {assetAssignmentReminders.slice(0, 5).map((reminder) => (
+              <div key={`${reminder.transfer_id}-${reminder.asset_id}`} className="px-5 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-xs">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-black text-amber-950">{reminder.asset_id}</span>
+                    <span className="text-amber-700">{reminder.transfer_code}</span>
+                  </div>
+                  <p className="text-amber-800 font-semibold mt-1 truncate">
+                    {reminder.anggota_penerima?.nama ?? '-'} {reminder.anggota_penerima?.sap_id ? `(${reminder.anggota_penerima.sap_id})` : ''}
+                  </p>
+                  {reminder.item_notes && (
+                    <p className="text-amber-700 mt-0.5 truncate">{reminder.item_notes}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-amber-700 shrink-0">
+                  <span>{reminder.from_estate?.estate ?? '?'} {'->'} {reminder.to_estate?.estate ?? '?'}</span>
+                  <span>{formatDate(reminder.receive_date || reminder.transfer_date)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(assetDamageReminders.length > 0 || maintenanceReminders.length > 0 || writeOffPendingReminders.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {assetDamageReminders.length > 0 && (
+            <ReminderPanel title="Kondisi Aset Bermasalah" count={assetDamageReminders.length} tone="red">
+              {assetDamageReminders.slice(0, 5).map((item) => (
+                <ReminderRow
+                  key={item.reg_id}
+                  title={item.reg_id}
+                  subtitle={`${item.kondisi ?? '-'} - ${item.name || item.asset_no || '-'}`}
+                  meta={`${item.estate?.estate ?? '-'} - ${formatDate(item.condition_date || '')}`}
+                />
+              ))}
+            </ReminderPanel>
+          )}
+
+          {maintenanceReminders.length > 0 && (
+            <ReminderPanel title="Maintenance Progress" count={maintenanceReminders.length} tone="amber">
+              {maintenanceReminders.slice(0, 5).map((item) => (
+                <ReminderRow
+                  key={item.id}
+                  title={item.reg_id}
+                  subtitle={`${item.sent_ ?? '-'} - ${item.kondisi ?? '-'}`}
+                  meta={`${item.estate?.estate ?? '-'} - Target ${formatDate(item.target || '')}`}
+                />
+              ))}
+            </ReminderPanel>
+          )}
+
+          {writeOffPendingReminders.length > 0 && (
+            <ReminderPanel title="Pending Write-Off" count={writeOffPendingReminders.length} tone="gray">
+              {writeOffPendingReminders.slice(0, 5).map((item) => (
+                <ReminderRow
+                  key={item.id}
+                  title={item.reg_id}
+                  subtitle={`${item.kondisi ?? '-'} - ${item.keterangan || item.asset_no || '-'}`}
+                  meta={`${item.estate?.estate ?? '-'} - ${formatDate(item.date || '')}`}
+                />
+              ))}
+            </ReminderPanel>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatsCard
           title="My Estate"
           value={estateName}
@@ -193,6 +520,15 @@ const DashboardPage: React.FC = () => {
           accent="blue"
           trend={-3}
           trendLabel="vs last month"
+          loading={isLoading}
+          className="animate-fade-in delay-150"
+        />
+        <StatsCard
+          title="Stock Opname"
+          value={isLoading ? '-' : formatNumber(stockOpnameStats?.pending ?? 0)}
+          subtitle={`${stockOpnameStats?.review ?? 0} review / ${stockOpnameStats?.posted_this_month ?? 0} posted`}
+          icon={<ClipboardCheck className="h-4 w-4" />}
+          accent="purple"
           loading={isLoading}
           className="animate-fade-in delay-150"
         />
@@ -337,6 +673,7 @@ const DashboardPage: React.FC = () => {
                   { label: 'Material IN',    val: inCount,                     icon: <Upload className="h-3.5 w-3.5" />,   color: 'text-emerald-500'},
                   { label: 'Material OUT',   val: outCount,                    icon: <Download className="h-3.5 w-3.5" />, color: 'text-red-400'   },
                   { label: 'Low Stock',      val: alerts.length,               icon: <Layers className="h-3.5 w-3.5" />,   color: 'text-amber-500' },
+                  { label: 'Opname Pending', val: stockOpnameStats?.pending ?? 0, icon: <ClipboardCheck className="h-3.5 w-3.5" />, color: 'text-violet-500' },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center justify-between text-xs">
                     <span className={`flex items-center gap-1.5 font-medium text-forest-600 ${item.color.replace('text-', 'text-')}`}>
@@ -512,6 +849,103 @@ const DashboardPage: React.FC = () => {
       )}
 
       {/* ── Stock Alerts ─────────────────────────────────────────────────────── */}
+      {stockOpnameStats && (
+        <div className="animate-fade-in delay-200">
+          <div className="flex items-center gap-2 mb-3">
+            <ClipboardCheck className="h-4 w-4 text-violet-500" />
+            <h3 className="text-sm font-bold text-forest-800">Stock Opname Overview</h3>
+            <Badge variant="pending">{stockOpnameStats.pending}</Badge>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            {[
+              { label: 'Total', val: stockOpnameStats.total, color: 'text-forest-700', bg: 'bg-forest-50' },
+              { label: 'Pending', val: stockOpnameStats.pending, color: 'text-orange-700', bg: 'bg-orange-50' },
+              { label: 'Review', val: stockOpnameStats.review, color: 'text-violet-700', bg: 'bg-violet-50' },
+              { label: 'Posted Month', val: stockOpnameStats.posted_this_month, color: 'text-green-700', bg: 'bg-green-50' },
+              { label: 'Variance Value', val: formatNumber(stockOpnameStats.variance_value_this_month), color: 'text-red-700', bg: 'bg-red-50' },
+            ].map((s) => (
+              <div key={s.label} className={`card p-4 ${s.bg} border-0 text-center`}>
+                <p className={`text-2xl font-black ${s.color}`}>{s.val}</p>
+                <p className="text-xs text-gray-500 font-semibold mt-1">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {stockOpnameStats.recent.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-forest-700">Recent Stock Opnames</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {stockOpnameStats.recent.map((opname) => (
+                  <div key={opname.id} className="px-5 py-2.5 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-2 md:items-center text-xs">
+                    <span className="font-mono font-bold text-forest-800">{opname.opname_code}</span>
+                    <span className="text-forest-500 truncate">
+                      {opname.estate?.estate ?? '-'} / {opname.section?.section ?? 'All sections'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold justify-self-start ${
+                      opname.status === 'Posted' ? 'bg-green-100 text-green-700' :
+                      opname.status === 'Rejected' || opname.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                      opname.status === 'Review' ? 'bg-violet-100 text-violet-700' :
+                      'bg-orange-100 text-orange-700'
+                    }`}>{opname.status}</span>
+                    <span className="text-forest-400 md:text-right">{formatDate(opname.opname_date)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {((stockOpnameStats.pending_aging?.length ?? 0) > 0 || (stockOpnameStats.top_shortages_this_month?.length ?? 0) > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+              {(stockOpnameStats.pending_aging?.length ?? 0) > 0 && (
+                <div className="card overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100">
+                    <span className="text-xs font-bold text-forest-700">Pending Approval Aging</span>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {(stockOpnameStats.pending_aging ?? []).map((opname) => (
+                      <div key={opname.id} className="px-5 py-2.5 grid grid-cols-[1fr_auto] gap-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="font-mono font-bold text-forest-800 truncate">{opname.opname_code}</p>
+                          <p className="text-forest-500 truncate">{opname.estate?.estate ?? '-'} / {opname.section?.section ?? 'All sections'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-orange-700">{opname.days_pending} days</p>
+                          <p className="text-forest-400">{formatNumber(opname.total_variance_value)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(stockOpnameStats.top_shortages_this_month?.length ?? 0) > 0 && (
+                <div className="card overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100">
+                    <span className="text-xs font-bold text-forest-700">Top Shortages This Month</span>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {(stockOpnameStats.top_shortages_this_month ?? []).map((item) => (
+                      <div key={item.material_code} className="px-5 py-2.5 grid grid-cols-[1fr_auto] gap-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-forest-800 truncate">{item.material_name}</p>
+                          <p className="font-mono text-forest-400 truncate">{item.material_code}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-black text-red-700">{formatNumber(Number(item.shortage_qty ?? 0))}</p>
+                          <p className="text-forest-400">{formatNumber(Number(item.shortage_value ?? 0))}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {alerts.length > 0 && (
         <div className="animate-fade-in delay-300">
           <div className="flex items-center gap-2 mb-3">

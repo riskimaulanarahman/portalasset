@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('module_name');
+            $table->text('description')->nullable()->after('module_name');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

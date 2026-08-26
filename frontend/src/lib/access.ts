@@ -6,13 +6,17 @@ export const routePermissions: Record<string, string[]> = {
   '/estates': ['view-estates'],
   '/categories': ['view-categories'],
   '/materials': ['view-materials'],
+  '/material-stock-opnames': ['view-material-stock-opnames'],
   '/asset-regs': ['view-asset-regs'],
+  '/asset-departments': ['view-asset-departments'],
+  '/asset-divisions': ['view-asset-divisions'],
   '/assets': ['view-assets'],
   '/assets/:regId': ['view-assets'],
   '/transactions': ['view-transactions'],
+  '/transfers': ['view-transfers'],
   '/anggotas': ['view-anggotas'],
   '/cost-centers': ['view-cost-centers'],
-  '/software': ['view-software'],
+  '/user-activations': ['view-user-activations'],
   '/manufacturers': ['view-manufacturers'],
   '/asset-types': ['view-asset-types'],
   '/units': ['view-units'],
@@ -32,6 +36,10 @@ export function getStoredPermissions(): string[] {
 
 export function hasStoredPermission(permission: string): boolean {
   const user = getStoredUser();
+  if (user.role?.name === 'admin') {
+    return true;
+  }
+
   if (!Array.isArray(user.permissions)) {
     return true;
   }
@@ -45,6 +53,10 @@ export function hasAnyStoredPermission(permissions?: string[]): boolean {
   }
 
   const user = getStoredUser();
+  if (user.role?.name === 'admin') {
+    return true;
+  }
+
   if (!Array.isArray(user.permissions)) {
     return true;
   }

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->date('date');
             $table->string('code', 25)->comment('Material code');
-            $table->foreign('code')->references('code')->on('materials')->restrictOnDelete();
+            $table->foreign('code')->references('code')->on('materials')->noActionOnDelete();
             $table->enum('type', ['IN','OUT']);
             $table->decimal('qty', 10, 1);
             $table->string('uav_id', 25)->nullable();

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Play, Plus, Trash2, Download, AlertCircle, History, XCircle, Eye, ChevronDown } from 'lucide-react';
+import { Play, Plus, Trash2, Download, History, XCircle, Eye, ChevronDown } from 'lucide-react';
 import api from '../api/axios';
 import DataTable, { Column } from '../components/DataTable';
 import Modal from '../components/Modal';
@@ -8,8 +8,8 @@ import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/Toast';
 import useTitle from '../hooks/useTitle';
 import { Input, Textarea, FormGroup, SearchableSelect } from '../components/ui/FormFields';
-import { formatDate, getStoredUser, isHeadOfficeUser } from '../lib/utils';
-import { cn } from '../lib/utils';
+import MemberPicker, { type MemberPickerItem } from '../components/MemberPicker';
+import { cn, formatDate, getStoredUser, isHeadOfficeUser, parseBoolean } from '../lib/utils';
 import { showConfirm } from '../utils/SwalUtils';
 
 interface TransferItem {
@@ -101,7 +101,13 @@ interface EstateOption {
 
 interface AnggotaOption {
   sap_id: string;
+  login_name?: string | null;
   nama: string;
+  position?: string | null;
+  department?: string | null;
+  company_code?: string | null;
+  cost_center?: string | null;
+  not_active?: boolean;
 }
 
 interface AssetOption {
@@ -111,6 +117,10 @@ interface AssetOption {
   manufacture?: string;
   series?: string;
   not_active?: boolean;
+  asset_department_id?: number | null;
+  asset_division_id?: number | null;
+  department?: { name?: string } | null;
+  division?: { name?: string } | null;
 }
 
 interface MaterialOption {
@@ -204,9 +214,7 @@ const TransfersPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [transferType, setTransferType] = useState<'Asset' | 'Material'>('Material');
   const [items, setItems] = useState<TransferItem[]>([{ item_id: '', qty: 1 }]);
-  const [isWarningOpen, setIsWarningOpen] = useState(false);
   const [isCheckingWorkflow, setIsCheckingWorkflow] = useState(false);
-  const [pendingPayload, setPendingPayload] = useState<any>(null);
   const [selectedHistoryTransferId, setSelectedHistoryTransferId] = useState<number | null>(null);
   const [detailTransferId, setDetailTransferId] = useState<number | null>(null);
 
@@ -216,6 +224,7 @@ const TransfersPage: React.FC = () => {
   const isHoUser = isHeadOfficeUser(); // #22 FIX: use centralized helper
   const [sourceEstateId, setSourceEstateId] = useState<string>(isHoUser ? '' : userEstateId);
   const [toEstateId, setToEstateId]         = useState<string>('');
+  const [selectedRecipientId, setSelectedRecipientId] = useState<string>('');
 
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
@@ -267,13 +276,10 @@ const TransfersPage: React.FC = () => {
     },
   });
   
-  const { data: anggotasData } = useQuery<{ data: AnggotaOption[] }>({
-    queryKey: ['anggotas', toEstateId],
-    enabled: !!toEstateId,
+  const { data: anggotasData, isFetching: isFetchingAnggotas } = useQuery<{ data: AnggotaOption[] }>({
+    queryKey: ['anggotas'],
     queryFn: async () => {
-      const response = await api.get('/anggotas', {
-        params: { estate_id: toEstateId },
-      });
+      const response = await api.get('/anggotas');
       return response.data;
     },
   });
@@ -307,11 +313,14 @@ const TransfersPage: React.FC = () => {
       setIsModalOpen(false);
       setItems([{ item_id: '', qty: 1 }]);
       setToEstateId('');
+      setSelectedRecipientId('');
       if (isHoUser) setSourceEstateId('');
       success('Transfer created', 'The transfer has been submitted for approval.');
     },
     onError: (err: any) => {
-      toastError('Submission failed', err.response?.data?.message || 'Could not process the transfer.');
+      const errors = err.response?.data?.errors;
+      const firstError = errors ? (Object.values(errors)[0] as string[] | undefined)?.[0] : null;
+      toastError('Submission failed', firstError || err.response?.data?.message || 'Could not process the transfer.');
     },
   });
 
@@ -364,6 +373,9 @@ const TransfersPage: React.FC = () => {
             asset.type ? `- ${asset.type}` : '',
             asset.manufacture ? asset.manufacture : '',
             asset.series ? `(${asset.series})` : '',
+            asset.department?.name ? `| ${asset.department.name}` : '',
+            asset.division?.name ? `/ ${asset.division.name}` : '',
+            !asset.asset_department_id || !asset.asset_division_id ? '| Lengkapi dept/divisi' : '',
             asset.asset_no ? `| ${asset.asset_no}` : '',
           ]
             .filter(Boolean)
@@ -381,6 +393,20 @@ const TransfersPage: React.FC = () => {
 
   const isItemOptionsLoading = transferType === 'Asset' ? isLoadingAssets : isLoadingMaterials;
   const itemSearchPlaceholder = transferType === 'Asset' ? 'Search asset by reg ID, type, or serial...' : 'Search material by code or name...';
+  const activeMembers: MemberPickerItem[] = useMemo(
+    () => (anggotasData?.data ?? [])
+      .filter((anggota) => !parseBoolean(anggota.not_active))
+      .map((anggota) => ({
+        sap_id: String(anggota.sap_id),
+        login_name: anggota.login_name ?? null,
+        nama: String(anggota.nama ?? ''),
+        position: anggota.position ?? null,
+        department: anggota.department ?? null,
+        company_code: anggota.company_code ?? null,
+        cost_center: anggota.cost_center ?? null,
+      })),
+    [anggotasData],
+  );
 
   // #21 FIX: Helper untuk mendapatkan stok tersedia sebuah material
   const getMaterialStock = (materialCode: string): number | null => {
@@ -399,6 +425,21 @@ const TransfersPage: React.FC = () => {
         return `Qty material "${item.item_id}" (${item.qty}) melebihi stok tersedia (${available}).`;
       }
     }
+    return null;
+  };
+
+  const validateAssetOwnership = (): string | null => {
+    if (transferType !== 'Asset') return null;
+
+    for (const item of items) {
+      if (!item.item_id) continue;
+
+      const asset = (assetOptionsData?.data ?? []).find((candidate) => candidate.reg_id === item.item_id);
+      if (asset && (!asset.asset_department_id || !asset.asset_division_id)) {
+        return `Asset "${item.item_id}" belum memiliki Department dan Divisi. Lengkapi ownership asset sebelum transfer/distribusi.`;
+      }
+    }
+
     return null;
   };
 
@@ -526,7 +567,12 @@ const TransfersPage: React.FC = () => {
 
       <Modal
         isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setToEstateId(''); if (isHoUser) setSourceEstateId(''); }}
+        onClose={() => {
+          setIsModalOpen(false);
+          setToEstateId('');
+          setSelectedRecipientId('');
+          if (isHoUser) setSourceEstateId('');
+        }}
         title="Create Transfer Request"
         description="Submit a new transfer request for approval"
         size="lg"
@@ -539,15 +585,26 @@ const TransfersPage: React.FC = () => {
               type: transferType,
               from_estate_id: fd.get('from_estate_id') as string,
               to_estate_id: fd.get('to_estate_id') as string,
-              anggota_id: fd.get('anggota_id') as string,
+              anggota_id: selectedRecipientId,
               notes: fd.get('notes') as string,
-              items: items.filter(i => i.item_id.trim() !== '')
+              items: items
+                .filter(i => i.item_id.trim() !== '')
+                .map((item) => transferType === 'Asset'
+                  ? { item_id: item.item_id }
+                  : { item_id: item.item_id, qty: item.qty }
+                )
             };
 
             // #21 FIX: Validasi qty vs stok tersedia sebelum submit
             const qtyError = validateItemQtys();
             if (qtyError) {
               toastError('Validasi Qty', qtyError);
+              return;
+            }
+
+            const ownershipError = validateAssetOwnership();
+            if (ownershipError) {
+              toastError('Ownership belum lengkap', ownershipError);
               return;
             }
 
@@ -558,15 +615,17 @@ const TransfersPage: React.FC = () => {
                 const res = await api.get('/approval-workflows/check', {
                   params: { module_name: 'Transfer', estate_id: payload.to_estate_id }
                 });
-                if (res.data.exists) {
+                if (res.data.exists && res.data.ready !== false) {
                   mutation.mutate(payload);
                 } else {
-                  setPendingPayload(payload);
-                  setIsWarningOpen(true);
+                  toastError(
+                    'Workflow belum dikonfigurasi',
+                    res.data.message || 'Transfer tidak dapat dibuat sebelum workflow approval aktif tersedia untuk destination estate atau global.'
+                  );
                 }
               } catch (err) {
                 console.error("Workflow check failed", err);
-                mutation.mutate(payload); // Fallback to submit anyway if check fails
+                toastError('Workflow check gagal', 'Transfer tidak dikirim karena status workflow tidak dapat dipastikan.');
               } finally {
                 setIsCheckingWorkflow(false);
               }
@@ -624,22 +683,17 @@ const TransfersPage: React.FC = () => {
             </div>
           </FormGroup>
 
-          <div className="space-y-1.5">
-            <label className="block text-sm font-semibold text-forest-900">Member / Recipient (Anggota)</label>
-            <select
-              key={toEstateId}
-              name="anggota_id"
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              disabled={!toEstateId}
-            >
-              <option value="">
-                {toEstateId ? 'Select Recipient (Optional)...' : 'Select destination estate first...'}
-              </option>
-              {anggotasData?.data?.map((a) => (
-                <option key={a.sap_id} value={a.sap_id}>{a.nama} ({a.sap_id})</option>
-              ))}
-            </select>
-          </div>
+          <MemberPicker
+            label="Member / Recipient (Anggota)"
+            value={selectedRecipientId}
+            members={activeMembers}
+            isLoading={isFetchingAnggotas}
+            onChange={setSelectedRecipientId}
+            modalTitle="Select Recipient Member"
+            modalDescription="Search members, then choose Select on the matching row."
+            searchPlaceholder="Search by SAP ID, name, department, position..."
+            emptyMessage="No active members found"
+          />
 
           {/* Transfer Items Table */}
           <div className="border border-gray-200 rounded-xl overflow-hidden mt-2">
@@ -647,7 +701,9 @@ const TransfersPage: React.FC = () => {
               <thead className="text-xs text-forest-900 bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-2 font-bold">{transferType} Code / ID *</th>
-                  <th className="px-4 py-2 font-bold w-32">Qty *</th>
+                  {transferType === 'Material' && (
+                    <th className="px-4 py-2 font-bold w-32">Qty *</th>
+                  )}
                   <th className="px-4 py-2 font-bold w-12 text-center"></th>
                 </tr>
               </thead>
@@ -670,6 +726,7 @@ const TransfersPage: React.FC = () => {
                         noOptionsText={sourceEstateId ? `No ${transferType.toLowerCase()} available` : 'Select source estate first'}
                       />
                     </td>
+                    {transferType === 'Material' && (
                     <td className="px-4 py-2">
                       {/* #21 FIX: Tampilkan stok tersedia dan highlight jika qty melebihi stok */}
                       {(() => {
@@ -695,6 +752,7 @@ const TransfersPage: React.FC = () => {
                         );
                       })()}
                     </td>
+                    )}
                     <td className="px-4 py-2 text-center">
                       {items.length > 1 && (
                         <button type="button" onClick={() => removeItemRow(idx)} className="text-red-500 hover:text-red-700">
@@ -716,46 +774,21 @@ const TransfersPage: React.FC = () => {
           <Textarea label="Notes" name="notes" rows={2} placeholder="Optional notes about this transfer" />
 
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <Button variant="ghost" type="button" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setIsModalOpen(false);
+                setToEstateId('');
+                setSelectedRecipientId('');
+                if (isHoUser) setSourceEstateId('');
+              }}
+            >
+              Cancel
+            </Button>
             <Button variant="primary" type="submit" loading={mutation.isPending || isCheckingWorkflow}>Submit Transfer</Button>
           </div>
         </form>
-      </Modal>
-
-      <Modal
-        isOpen={isWarningOpen}
-        onClose={() => setIsWarningOpen(false)}
-        title="Approval Workflow Warning"
-        size="md"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-4 p-4 bg-orange-50 border border-orange-100 rounded-xl">
-            <AlertCircle className="h-6 w-6 text-orange-600 shrink-0" />
-            <div>
-              <h4 className="text-sm font-bold text-orange-900">Workflow Not Configured</h4>
-              <p className="text-xs text-orange-700 mt-1 leading-relaxed">
-                There is no active approval workflow found for the destination estate or global. 
-                If you proceed, this transfer request will be **automatically approved** without going through an approval sequence.
-              </p>
-            </div>
-          </div>
-          <p className="text-sm text-gray-600 font-medium px-1">
-            Do you want to proceed with this transfer anyway?
-          </p>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setIsWarningOpen(false)}>Cancel</Button>
-            <Button 
-              variant="primary" 
-              className="bg-orange-600 hover:bg-orange-700 shadow-orange-100"
-              onClick={() => {
-                mutation.mutate(pendingPayload);
-                setIsWarningOpen(false);
-              }}
-            >
-              Confirm and Proceed
-            </Button>
-          </div>
-        </div>
       </Modal>
 
       <Modal
@@ -827,9 +860,13 @@ const TransfersPage: React.FC = () => {
                     <thead className="bg-gray-50 text-xs text-gray-500 font-bold uppercase tracking-wide">
                       <tr>
                         <th className="px-4 py-2 text-left">Item</th>
-                        <th className="px-4 py-2 text-right">Qty</th>
-                        <th className="px-4 py-2 text-right">Stok Saat Ini</th>
-                        <th className="px-4 py-2 text-right">Proyeksi Sisa</th>
+                        {detailTransfer.type === 'Material' && (
+                          <>
+                            <th className="px-4 py-2 text-right">Qty</th>
+                            <th className="px-4 py-2 text-right">Stok Saat Ini</th>
+                            <th className="px-4 py-2 text-right">Proyeksi Sisa</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -839,6 +876,8 @@ const TransfersPage: React.FC = () => {
                             <p className="font-medium text-gray-800">{item.item_name ?? item.item_id}</p>
                             {item.item_name && <p className="text-[11px] text-gray-400 font-mono">{item.item_id}</p>}
                           </td>
+                          {detailTransfer.type === 'Material' && (
+                            <>
                           <td className="px-4 py-2 text-right text-gray-700">{item.qty}</td>
                           <td className="px-4 py-2 text-right text-gray-600">
                             {item.current_stock !== null && item.current_stock !== undefined ? item.current_stock : '—'}
@@ -850,6 +889,8 @@ const TransfersPage: React.FC = () => {
                           )}>
                             {item.projected_stock !== null && item.projected_stock !== undefined ? item.projected_stock : '—'}
                           </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -868,7 +909,7 @@ const TransfersPage: React.FC = () => {
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-gray-200 px-4 py-4 text-sm text-gray-400 text-center">
-                Tidak ada workflow approval terkait. Transfer ini diproses otomatis.
+                Tidak ada workflow approval terkait. Transfer baru tidak dapat dibuat tanpa workflow aktif.
               </div>
             )}
           </div>

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Concerns\InteractsWithEstateScope;
+use App\Http\Controllers\Concerns\InteractsWithAssetOwnershipScope;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\Material;
@@ -18,7 +18,7 @@ use Illuminate\Http\Request;
  */
 class SearchController extends Controller
 {
-    use InteractsWithEstateScope;
+    use InteractsWithAssetOwnershipScope;
 
     public function search(Request $request)
     {
@@ -41,9 +41,7 @@ class SearchController extends Controller
             })
             ->limit($limit);
 
-        if (!$this->isHeadOfficeUser()) {
-            $assetQuery->where('estate_id', $this->currentEstateId());
-        }
+        $this->applyAssetVisibilityScope($assetQuery);
 
         foreach ($assetQuery->get() as $asset) {
             $results[] = [

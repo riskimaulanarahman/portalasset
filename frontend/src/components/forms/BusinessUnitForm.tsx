@@ -19,7 +19,7 @@ interface BusinessUnitFormProps {
 }
 
 const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ initialData, onSubmit, onCancel }) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<BusinessUnitFormValues>({
     resolver: zodResolver(businessUnitSchema),
     defaultValues: initialData ? {
       bu_code: initialData.bu_code,
@@ -31,7 +31,7 @@ const BusinessUnitForm: React.FC<BusinessUnitFormProps> = ({ initialData, onSubm
   });
 
   return (
-    <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <Input
         label="BU Code"
         {...register('bu_code')}

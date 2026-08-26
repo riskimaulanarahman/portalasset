@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Estate;
+use App\Models\Asset;
+use App\Models\AssetTransferHistory;
 use App\Models\Material;
 use App\Models\MaterialTransferHistory;
 use App\Models\Transaction;
@@ -14,7 +16,17 @@ class MaterialTransferService
 {
     public function applyTransfer(Transfer $transfer, ?string $actorName = null): void
     {
-        $transfer->loadMissing(['items', 'fromEstate', 'toEstate', 'materialHistories']);
+        $actorName = $this->legacyActorName($actorName);
+        $transfer->loadMissing(['items', 'fromEstate', 'toEstate', 'materialHistories', 'assetHistories']);
+
+        if ($transfer->type === 'Asset') {
+            if ($transfer->assetHistories->isNotEmpty()) {
+                return;
+            }
+
+            $this->applyAssetTransfer($transfer, $actorName);
+            return;
+        }
 
         if ($transfer->type !== 'Material') {
             return;
@@ -25,7 +37,61 @@ class MaterialTransferService
         }
 
         foreach ($transfer->items as $item) {
-            $this->applyTransferItem($transfer, $item, $actorName ?? 'system');
+            $this->applyTransferItem($transfer, $item, $actorName);
+        }
+    }
+
+    private function legacyActorName(?string $actorName): string
+    {
+        return mb_substr($actorName ?: 'system', 0, 20);
+    }
+
+    private function applyAssetTransfer(Transfer $transfer, string $actorName): void
+    {
+        $destinationEstate = $transfer->toEstate ?? Estate::find($transfer->to_estate_id);
+        $processedAt = now();
+
+        if (!$destinationEstate) {
+            throw ValidationException::withMessages([
+                'to_estate_id' => ['Estate tujuan transfer tidak ditemukan.'],
+            ]);
+        }
+
+        foreach ($transfer->items as $item) {
+            $asset = Asset::where('reg_id', $item->item_id)->lockForUpdate()->first();
+
+            if (!$asset) {
+                throw ValidationException::withMessages([
+                    'items' => ["Asset {$item->item_id} tidak ditemukan."],
+                ]);
+            }
+
+            if ($transfer->from_estate_id && (int) $asset->estate_id !== (int) $transfer->from_estate_id) {
+                throw ValidationException::withMessages([
+                    'items' => ["Asset {$asset->reg_id} bukan milik estate asal transfer."],
+                ]);
+            }
+
+            AssetTransferHistory::create([
+                'transfer_id' => $transfer->id,
+                'transfer_item_id' => $item->id,
+                'asset_id' => $asset->reg_id,
+                'from_estate_id' => $asset->estate_id,
+                'to_estate_id' => $destinationEstate->id,
+                'previous_unit_id' => $asset->unit_id,
+                'new_unit_id' => $destinationEstate->estate_id,
+                'previous_anggota_id' => $asset->anggota_id,
+                'target_anggota_id' => $transfer->anggota_id,
+                'notes' => $item->notes,
+                'processed_by' => $actorName,
+                'processed_at' => $processedAt,
+            ]);
+
+            $asset->update([
+                'estate_id' => $destinationEstate->id,
+                'unit_id' => $destinationEstate->estate_id,
+                'update_by' => $actorName,
+            ]);
         }
     }
 
@@ -155,7 +221,8 @@ class MaterialTransferService
     {
         $prefix = 'MAT-' . $estate->estate_id . '-';
 
-        $lastNumber = Material::where('estate_id', $estate->id)
+        $lastNumber = Material::withTrashed()
+            ->where('estate_id', $estate->id)
             ->where('code', 'like', $prefix . '%')
             ->pluck('code')
             ->map(function (string $code) use ($prefix) {
@@ -164,7 +231,12 @@ class MaterialTransferService
             })
             ->max() ?? 0;
 
-        return $prefix . str_pad((string) ($lastNumber + 1), 3, '0', STR_PAD_LEFT);
+        do {
+            $lastNumber++;
+            $code = $prefix . str_pad((string) $lastNumber, 3, '0', STR_PAD_LEFT);
+        } while (Material::withTrashed()->where('code', $code)->exists());
+
+        return $code;
     }
 
     private function createTransactionLogs(

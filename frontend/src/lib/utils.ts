@@ -103,18 +103,32 @@ export function txTypeBadge(type: string): string {
 }
 
 /** Map active status to badge class */
-export function statusBadge(notActive: boolean): string {
-  return notActive ? 'badge badge-inactive' : 'badge badge-active';
+export function statusBadge(notActive: unknown): string {
+  return parseBoolean(notActive) ? 'badge badge-inactive' : 'badge badge-active';
+}
+
+export function parseBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    return ['1', 'true', 'yes', 'y', 'on'].includes(value.trim().toLowerCase());
+  }
+
+  return Boolean(value);
 }
 
 // ── Local Storage ──────────────────────────────────────────────────────────────
 export function getStoredUser(): {
   name?: string;
+  not_active?: boolean;
+  access_setup_required?: boolean;
   estate_id?: string;
   role_id?: number;
   role?: { name: string };
   permissions?: string[];
   estate?: { id?: number; estate_id?: string; estate?: string };
+  asset_departments?: { id: number; name: string; code?: string | null }[];
+  asset_divisions?: { id: number; name: string; code?: string | null; asset_department_id?: number }[];
   username?: string;
 } {
   try {
@@ -132,6 +146,11 @@ export function getStoredUser(): {
 export function isHeadOfficeUser(): boolean {
   const user = getStoredUser();
   return user?.estate?.estate_id === 'HO';
+}
+
+export function isStoredAdmin(): boolean {
+  const user = getStoredUser();
+  return user.role?.name === 'admin';
 }
 
 // ── CSV Export ─────────────────────────────────────────────────────────────────

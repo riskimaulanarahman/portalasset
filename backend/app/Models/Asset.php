@@ -35,12 +35,22 @@ class Asset extends Model
         'keterangan',
         'vendor_id',
         'estate_id',
+        'asset_department_id',
+        'asset_division_id',
+        'anggota_id',
         'attachment',
         'not_active',
         'create_by',
         'update_by',
         'source',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'not_active' => 'boolean',
+        ];
+    }
 
     public function section()
     {
@@ -85,5 +95,25 @@ class Asset extends Model
     public function estate()
     {
         return $this->belongsTo(Estate::class);
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(AssetDepartment::class, 'asset_department_id');
+    }
+
+    public function division()
+    {
+        return $this->belongsTo(AssetDivision::class, 'asset_division_id');
+    }
+
+    public function anggota()
+    {
+        return $this->belongsTo(Anggota::class, 'anggota_id', 'sap_id');
+    }
+
+    public function transferHistories(): HasMany
+    {
+        return $this->hasMany(AssetTransferHistory::class, 'asset_id', 'reg_id')->orderByDesc('processed_at');
     }
 }

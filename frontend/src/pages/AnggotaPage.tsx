@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Users, RefreshCw } from 'lucide-react';
 import api from '../api/axios';
-import { cn, getStoredUser } from '../lib/utils';
+import { cn, getStoredUser, parseBoolean } from '../lib/utils';
 import DataTable, { Column } from '../components/DataTable';
 import { useToast } from '../components/ui/Toast';
 import useTitle from '../hooks/useTitle';
@@ -14,16 +14,11 @@ interface Anggota {
   nama:            string;
   company_code:    string | null;
   cost_center:     string | null;
+  department:      string | null;
   supervisor:      string | null;
   contract_status: string | null;
   estate?:         { id: number; estate_id: string; estate: string };
   not_active:      boolean;
-}
-
-interface Estate {
-  id: number;
-  estate_id: string;
-  estate: string;
 }
 
 const AnggotaPage: React.FC = () => {
@@ -33,24 +28,12 @@ const AnggotaPage: React.FC = () => {
   const isHoUser = user.estate?.estate_id === 'HO' || user.username === 'admin' || user.role?.name === 'admin';
 
   const { success, error: toastError } = useToast();
-  const [estateFilter, setEstateFilter] = useState<number | ''>('');
   const [isSyncing, setIsSyncing]       = useState(false);
 
-  const { data: estates } = useQuery<Estate[]>({
-    queryKey: ['estates'],
-    queryFn: async () => {
-      const resp = await api.get('/estates');
-      return resp.data.data;
-    },
-    enabled: isHoUser,
-  });
-
   const { data: anggotas, isLoading } = useQuery<Anggota[]>({
-    queryKey: ['anggotas', estateFilter],
+    queryKey: ['anggotas'],
     queryFn: async () => {
-      const params: Record<string, any> = {};
-      if (isHoUser && estateFilter) params.estate_id = estateFilter;
-      const resp = await api.get('/anggotas', { params });
+      const resp = await api.get('/anggotas');
       return resp.data.data;
     },
   });
@@ -78,6 +61,12 @@ const AnggotaPage: React.FC = () => {
         : <span className="text-gray-300 text-xs">—</span>,
     },
     { key: 'nama', label: 'Name', sortable: true },
+    {
+      key: 'department',
+      label: 'Department',
+      sortable: true,
+      render: (val: any) => val || <span className="text-gray-300 text-xs">â€”</span>,
+    },
     {
       key: 'company_code',
       label: 'Company',
@@ -118,13 +107,13 @@ const AnggotaPage: React.FC = () => {
       render: (val: any) => (
         <span className={cn(
           "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
-          !val ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+          !parseBoolean(val) ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
         )}>
-          {!val ? 'Active' : 'Inactive'}
+          {!parseBoolean(val) ? 'Active' : 'Inactive'}
         </span>
       ),
     },
-  ];
+  ].filter((column) => column.key !== 'estate.estate_id');
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -139,18 +128,6 @@ const AnggotaPage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {isHoUser && (
-            <select
-              className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              value={estateFilter}
-              onChange={e => setEstateFilter(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">All Estates</option>
-              {(estates ?? []).map(e => (
-                <option key={e.id} value={e.id}>{e.estate_id} - {e.estate}</option>
-              ))}
-            </select>
-          )}
           {isHoUser && (
             <button
               onClick={handleSync}

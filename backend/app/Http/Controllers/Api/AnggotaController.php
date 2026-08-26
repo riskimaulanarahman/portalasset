@@ -16,7 +16,8 @@ class AnggotaController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:view-anggotas', only: ['index', 'show']),
+            new Middleware('permission:view-anggotas|assign-asset-members|edit-assets', only: ['index']),
+            new Middleware('permission:view-anggotas', only: ['show']),
             new Middleware('permission:create-anggotas', only: ['store']),
             new Middleware('permission:edit-anggotas', only: ['update']),
             new Middleware('permission:delete-anggotas', only: ['destroy']),
@@ -28,13 +29,8 @@ class AnggotaController extends Controller implements HasMiddleware
         $query = Anggota::with(['section', 'estate']);
 
         if ($request->filled('estate_id')) {
-            // Explicit estate_id param: dipakai semua user (contoh: filter penerima di form Transfer)
             $query->where('estate_id', (int) $request->estate_id);
-        } elseif (!$this->isHeadOfficeUser()) {
-            // Non-HO tanpa filter: tampilkan anggota estate sendiri (untuk halaman Members)
-            $query->where('estate_id', $this->currentEstateId());
         }
-        // HO tanpa filter: tampilkan semua
 
         return response()->json(['data' => $query->get()]);
     }

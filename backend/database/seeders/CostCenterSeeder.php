@@ -2,7 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Models\CostCenter;
+use App\Models\Estate;
 use Illuminate\Database\Seeder;
 
 class CostCenterSeeder extends Seeder
@@ -12,6 +13,8 @@ class CostCenterSeeder extends Seeder
      */
     public function run(): void
     {
+        $estates = Estate::query()->get()->keyBy('estate_id');
+
         $centers = [
             ['cost_center' => '10101', 'dept' => 'Corporate IT', 'estate' => 'HO', 'join_estate' => 'HO', 'created_by' => 'admin'],
             ['cost_center' => '10201', 'dept' => 'Accounting', 'estate' => 'HO', 'join_estate' => 'HO', 'created_by' => 'admin'],
@@ -20,7 +23,9 @@ class CostCenterSeeder extends Seeder
         ];
 
         foreach ($centers as $center) {
-            \App\Models\CostCenter::updateOrCreate(
+            $center['estate_id'] = $estates->get($center['join_estate'] ?: $center['estate'])?->id;
+
+            CostCenter::updateOrCreate(
                 ['cost_center' => $center['cost_center']],
                 $center
             );

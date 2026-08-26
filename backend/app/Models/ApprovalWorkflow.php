@@ -9,6 +9,7 @@ class ApprovalWorkflow extends Model
     protected $fillable = [
         'name',
         'module_name',
+        'description',
         'is_active',
         'estate_id',
     ];

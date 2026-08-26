@@ -43,7 +43,21 @@ class AuthTest extends TestCase
         $this->postJson('/api/login', [
             'username' => 'testuser',
             'password' => 'wrong-password',
-        ])->assertUnprocessable();
+        ])->assertUnprocessable()
+          ->assertJsonValidationErrors(['password'])
+          ->assertJsonMissingValidationErrors(['username'])
+          ->assertJsonPath('errors.password.0', 'Password salah.');
+    }
+
+    public function test_login_fails_for_unknown_username(): void
+    {
+        $this->postJson('/api/login', [
+            'username' => 'unknown',
+            'password' => 'password123',
+        ])->assertUnprocessable()
+          ->assertJsonValidationErrors(['username'])
+          ->assertJsonMissingValidationErrors(['password'])
+          ->assertJsonPath('errors.username.0', 'User tidak ditemukan atau belum aktif');
     }
 
     public function test_login_fails_for_inactive_user(): void
@@ -57,7 +71,10 @@ class AuthTest extends TestCase
         $this->postJson('/api/login', [
             'username' => 'inactive',
             'password' => 'password123',
-        ])->assertUnprocessable();
+        ])->assertUnprocessable()
+          ->assertJsonValidationErrors(['username'])
+          ->assertJsonMissingValidationErrors(['password'])
+          ->assertJsonPath('errors.username.0', 'User tidak ditemukan atau belum aktif');
     }
 
     public function test_login_is_rate_limited(): void

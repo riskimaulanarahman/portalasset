@@ -8,7 +8,7 @@ import api from '../../api/axios';
 const assetRegSchema = z.object({
   asset_type_id: z.number().min(1, 'Type is required'),
   manufacturer_id: z.number().min(1, 'Manufacturer is required'),
-  series: z.string().min(1, 'Series / Model is required').max(100),
+  series: z.string().min(1, 'Series / Model is required').max(25),
   section_id: z.number().min(1, 'Section is required'),
   not_active: z.boolean().default(false),
 });
