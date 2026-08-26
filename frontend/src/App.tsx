@@ -26,6 +26,7 @@ import AssetConditionsPage from './pages/AssetConditionsPage';
 import AdminWorkflowsPage from './pages/admin/AdminWorkflowsPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminRolesPage from './pages/admin/AdminRolesPage';
+import AdminDataResetPage from './pages/admin/AdminDataResetPage';
 import SettingsPage from './pages/admin/SettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { routePermissions } from './lib/access';
@@ -63,6 +64,7 @@ function App() {
         <Route path="/admin/workflows" element={<ProtectedRoute requiredPermissions={routePermissions['/admin/workflows']}><AdminWorkflowsPage /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute requiredPermissions={routePermissions['/admin/users']}><AdminUsersPage /></ProtectedRoute>} />
         <Route path="/admin/roles" element={<ProtectedRoute requiredPermissions={routePermissions['/admin/roles']}><AdminRolesPage /></ProtectedRoute>} />
+        <Route path="/admin/data-reset" element={<ProtectedRoute requiredPermissions={routePermissions['/admin/data-reset']}><AdminDataResetPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute requiredPermissions={routePermissions['/settings']}><SettingsPage /></ProtectedRoute>} />
 
         <Route path="/" element={<Navigate to="/login" replace />} />

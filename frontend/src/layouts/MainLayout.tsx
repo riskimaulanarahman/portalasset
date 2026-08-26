@@ -5,7 +5,7 @@ import {
   ClipboardList, History, LogOut, Menu, User as UserIcon,
   ArrowLeftRight, Bell, Search, Moon, Sun, ChevronRight,
   Users, Wallet, Monitor, HelpCircle, Factory, Tag, ClipboardCheck, Play,
-  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2, Activity
+  Settings, UserCog, Workflow, Shield, Ruler, ShoppingCart, Building2, Activity, Trash2
 } from 'lucide-react';
 import { cn, getStoredUser, toggleDarkMode, isDarkMode } from '../lib/utils';
 import { useToast } from '../components/ui/Toast';
@@ -92,6 +92,7 @@ const navigation: NavSection[] = [
       { to: '/admin/workflows', icon: <Workflow className="h-4 w-4" />, label: 'Approval Workflows' },
       { to: '/admin/users',     icon: <UserCog className="h-4 w-4" />,  label: 'User Management' },
       { to: '/admin/roles',     icon: <Shield className="h-4 w-4" />,   label: 'Role Management' },
+      { to: '/admin/data-reset',icon: <Trash2 className="h-4 w-4" />,   label: 'Reset Data UAT' },
       { to: '/settings',        icon: <Settings className="h-4 w-4" />, label: 'System Settings' },
     ],
   },

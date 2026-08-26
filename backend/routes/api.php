@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\TransConditionController;
 use App\Http\Controllers\Api\TransMaintenanceController;
 use App\Http\Controllers\Api\WriteOffController;
+use App\Http\Controllers\Api\DataResetController;
 
 // #3 FIX: Rate limiting — 5 percobaan per menit per IP
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
@@ -97,4 +98,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // #14 FIX: Password management
     Route::post('profile/change-password', [\App\Http\Controllers\Api\AuthController::class, 'changePassword']);
     Route::post('password/reset-by-admin', [\App\Http\Controllers\Api\AuthController::class, 'resetPasswordByAdmin']);
+
+    // Reset Data UAT (admin only)
+    Route::get('admin/data-reset/preview', [DataResetController::class, 'preview']);
+    Route::post('admin/data-reset', [DataResetController::class, 'execute']);
 });

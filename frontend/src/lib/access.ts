@@ -21,6 +21,7 @@ export const routePermissions: Record<string, string[]> = {
   '/admin/workflows': ['view-approval-workflows'],
   '/admin/users': ['view-users'],
   '/admin/roles': ['view-roles'],
+  '/admin/data-reset': ['execute-data-reset'],
   '/settings': ['edit-settings'],
 };
 
