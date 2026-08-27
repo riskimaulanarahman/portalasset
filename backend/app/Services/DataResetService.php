@@ -6,7 +6,6 @@ use App\Models\DataResetLog;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 
 class DataResetService
@@ -116,7 +115,7 @@ class DataResetService
             throw new \InvalidArgumentException('Tidak ada domain valid yang dipilih.');
         }
 
-        $backup = $this->backupDatabase();
+        $backup = $this->backupSelectedTables($this->resolveTables($validKeys));
         if (!$backup['success'] && !$forceWithoutBackup) {
             throw new \RuntimeException('BACKUP_FAILED:' . $backup['message']);
         }
@@ -134,9 +133,10 @@ class DataResetService
         $deletedCounts = [];
 
         DB::beginTransaction();
-        DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
         try {
+            $this->disableForeignKeyChecks();
+
             foreach ($validKeys as $key) {
                 if ($key === self::USERS_DOMAIN_KEY) {
                     $deletedCounts[$key] = ['users' => $this->deleteNonAdminUsers()];
@@ -156,7 +156,7 @@ class DataResetService
             DB::rollBack();
             throw $e;
         } finally {
-            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+            $this->enableForeignKeyChecks();
         }
 
         foreach ($attachmentsToDelete as $path) {
@@ -193,6 +193,61 @@ class DataResetService
         ];
     }
 
+    /**
+     * Flatten domain keys terpilih menjadi daftar nama tabel unik (termasuk
+     * 'users' untuk domain users_testing), dipakai untuk backup sebelum hapus.
+     */
+    protected function resolveTables(array $validKeys): array
+    {
+        $tables = [];
+        foreach ($validKeys as $key) {
+            if ($key === self::USERS_DOMAIN_KEY) {
+                $tables[] = 'users';
+                continue;
+            }
+            if (!isset(self::DOMAINS[$key])) {
+                continue;
+            }
+            foreach (self::DOMAINS[$key]['tables'] as $table) {
+                $tables[] = $table;
+            }
+        }
+
+        return array_values(array_unique($tables));
+    }
+
+    protected function driverName(): string
+    {
+        return DB::connection()->getDriverName();
+    }
+
+    /**
+     * Nonaktifkan enforcement FK sementara agar tabel bisa dihapus tanpa
+     * memusingkan urutan child/parent. Sintaks berbeda per engine database.
+     */
+    protected function disableForeignKeyChecks(): void
+    {
+        match ($this->driverName()) {
+            'mysql', 'mariadb' => DB::statement('SET FOREIGN_KEY_CHECKS=0'),
+            'sqlsrv' => DB::statement("EXEC sp_msforeachtable 'ALTER TABLE ? NOCHECK CONSTRAINT ALL'"),
+            default => throw new \RuntimeException('Driver database "' . $this->driverName() . '" belum didukung oleh fitur reset data.'),
+        };
+    }
+
+    protected function enableForeignKeyChecks(): void
+    {
+        try {
+            match ($this->driverName()) {
+                'mysql', 'mariadb' => DB::statement('SET FOREIGN_KEY_CHECKS=1'),
+                'sqlsrv' => DB::statement("EXEC sp_msforeachtable 'ALTER TABLE ? CHECK CONSTRAINT ALL'"),
+                default => null,
+            };
+        } catch (\Throwable $e) {
+            // Jangan biarkan kegagalan re-enable menutupi exception asli dari blok try.
+            Log::error('[DataReset] Gagal mengaktifkan kembali FK constraint: ' . $e->getMessage());
+        }
+    }
+
     protected function countNonAdminUsers(): int
     {
         return $this->nonAdminUsersQuery()->count();
@@ -222,52 +277,31 @@ class DataResetService
     }
 
     /**
-     * Backup database via mysqldump ke storage privat (storage/app/private/backups).
-     * Best-effort: jika mysqldump tidak tersedia / gagal, laporkan tapi jangan crash.
+     * Backup baris dari tabel-tabel yang akan dihapus ke JSON di storage privat
+     * (storage/app/private/backups/uat-reset-{timestamp}/{table}.json).
+     *
+     * Sengaja tidak pakai mysqldump/native DB backup tool: keduanya spesifik
+     * per-engine (mysqldump untuk MySQL, BACKUP DATABASE untuk SQL Server perlu
+     * akses filesystem di host DB server, bukan host aplikasi). Query builder
+     * SELECT bekerja sama di MySQL maupun SQL Server tanpa dependency eksternal.
      */
-    protected function backupDatabase(): array
+    protected function backupSelectedTables(array $tables): array
     {
-        $connectionName = config('database.default');
-        $config = config("database.connections.{$connectionName}");
-
-        $filename = 'backups/uat-reset-' . now()->format('Y-m-d-His') . '.sql';
+        $dir = 'backups/uat-reset-' . now()->format('Y-m-d-His');
 
         try {
-            $result = Process::env(['MYSQL_PWD' => $config['password'] ?? ''])
-                ->timeout(300)
-                ->run([
-                    'mysqldump',
-                    '-h', (string) ($config['host'] ?? '127.0.0.1'),
-                    '-P', (string) ($config['port'] ?? '3306'),
-                    '-u', (string) ($config['username'] ?? 'root'),
-                    '--single-transaction',
-                    '--skip-lock-tables',
-                    (string) ($config['database'] ?? ''),
-                ]);
-
-            if (!$result->successful()) {
-                return [
-                    'success' => false,
-                    'path' => null,
-                    'message' => 'mysqldump gagal: ' . trim($result->errorOutput() ?: 'exit code ' . $result->exitCode()),
-                ];
+            foreach ($tables as $table) {
+                $rows = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+                Storage::disk('local')->put(
+                    "{$dir}/{$table}.json",
+                    json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                );
             }
-
-            $output = $result->output();
-            if (trim($output) === '') {
-                return [
-                    'success' => false,
-                    'path' => null,
-                    'message' => 'mysqldump tidak menghasilkan output. Pastikan binary mysqldump tersedia di server.',
-                ];
-            }
-
-            Storage::disk('local')->put($filename, $output);
 
             return [
                 'success' => true,
-                'path' => $filename,
-                'message' => 'Backup database berhasil dibuat sebelum reset.',
+                'path' => $dir,
+                'message' => 'Backup ' . count($tables) . ' tabel berhasil dibuat sebelum reset.',
             ];
         } catch (\Throwable $e) {
             return [
