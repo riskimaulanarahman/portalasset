@@ -34,7 +34,7 @@ const DOMAIN_META: { key: string; description: string }[] = [
 
 const AdminDataResetPage: React.FC = () => {
   useTitle('Reset Data UAT');
-  const { success, error: toastError } = useToast();
+  const { success, error: toastError, warning } = useToast();
   const queryClient = useQueryClient();
 
   const [selected, setSelected] = useState<string[]>([]);
@@ -66,6 +66,9 @@ const AdminDataResetPage: React.FC = () => {
     mutationFn: (payload: Record<string, unknown>) => api.post('/admin/data-reset', payload),
     onSuccess: (res) => {
       success('Reset Berhasil', `${res.data.data.total_deleted} baris data telah dihapus.`);
+      if (res.data.data.log_saved === false) {
+        warning('Audit Log Gagal Tersimpan', 'Reset sudah berhasil, tapi catatan log-nya gagal disimpan. Cek log server.');
+      }
       closeModal();
       setSelected([]);
       setIncludeUsers(false);

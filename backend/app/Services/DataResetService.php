@@ -172,24 +172,36 @@ class DataResetService
             $totalDeleted += array_sum($tables);
         }
 
-        DataResetLog::create([
-            'user_id' => $actor->id,
-            'username' => $actor->username ?? $actor->name,
-            'domains' => $validKeys,
-            'deleted_counts' => $deletedCounts,
-            'total_deleted' => $totalDeleted,
-            'backup_path' => $backup['path'],
-            'backup_success' => $backup['success'],
-            'ip_address' => $ip,
-            'user_agent' => $userAgent,
-            'created_at' => now(),
-        ]);
+        // Data sudah permanen terhapus (DB::commit() di atas sudah lewat) sebelum titik ini.
+        // Kegagalan menulis audit log TIDAK BOLEH membuat reset ini dilaporkan gagal ke user.
+        $logSaved = true;
+        try {
+            DataResetLog::create([
+                'user_id' => $actor->id,
+                'username' => $actor->username ?? $actor->name,
+                'domains' => $validKeys,
+                'deleted_counts' => $deletedCounts,
+                'total_deleted' => $totalDeleted,
+                'backup_path' => $backup['path'],
+                'backup_success' => $backup['success'],
+                'ip_address' => $ip,
+                'user_agent' => $userAgent,
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            $logSaved = false;
+            Log::error('[DataReset] Reset berhasil, tapi gagal menyimpan audit log: ' . $e->getMessage(), [
+                'domains' => $validKeys,
+                'total_deleted' => $totalDeleted,
+            ]);
+        }
 
         return [
             'domains' => $validKeys,
             'deleted_counts' => $deletedCounts,
             'total_deleted' => $totalDeleted,
             'backup' => $backup,
+            'log_saved' => $logSaved,
         ];
     }
 
