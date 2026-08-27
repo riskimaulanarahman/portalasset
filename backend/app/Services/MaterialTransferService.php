@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Anggota;
 use App\Models\Estate;
 use App\Models\Asset;
 use App\Models\AssetTransferHistory;
@@ -87,12 +88,23 @@ class MaterialTransferService
                 'processed_at' => $processedAt,
             ]);
 
-            $asset->update([
+            $assetUpdate = [
                 'estate_id' => $destinationEstate->id,
                 'unit_id' => $destinationEstate->estate_id,
                 'update_by' => $actorName,
-            ]);
+            ];
+
+            if ($transfer->anggota_id && $this->isAnggotaActive($transfer->anggota_id)) {
+                $assetUpdate['anggota_id'] = $transfer->anggota_id;
+            }
+
+            $asset->update($assetUpdate);
         }
+    }
+
+    private function isAnggotaActive(string $anggotaId): bool
+    {
+        return Anggota::whereKey($anggotaId)->where('not_active', false)->exists();
     }
 
     private function applyTransferItem(Transfer $transfer, TransferItem $item, string $actorName): void
